@@ -10,7 +10,7 @@ ApplicationWindow {
     minimumWidth: 640
     minimumHeight: 400
     color: "transparent"
-    title: (Tabs.currentTitle !== "" ? Tabs.currentTitle + " — " : "") + "beryl"
+    title: (Tabs.currentTitle !== "" ? Tabs.currentTitle.substring(0, 200) + " — " : "") + "beryl"
 
     function currentView() {
         var ld = viewRepeater.itemAt(Tabs.currentIndex)
