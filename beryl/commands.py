@@ -229,7 +229,11 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
 
     @command("help")
     def help_(count=1, arg=""):
-        api.helpRequested.emit()
+        if keys.mode == "help":
+            keys.set_mode("normal")
+        else:
+            keys.set_mode("help")
+            api.helpRequested.emit()
 
     @command("tab")
     def tab(count=1, arg=""):

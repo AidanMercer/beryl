@@ -238,6 +238,11 @@ class KeyController(QObject):
             if ks and ks != "DEAD":
                 self.listKey.emit(ks)
             return True           # the overlay owns every key
+        if self._mode == "help":
+            ks = keystr(ev)
+            if ks in ("<Esc>", "h", "?", "q"):
+                self.set_mode("normal")
+            return True           # help swallows everything (page can't scroll under it)
         if self._mode in ("insert", "passthrough"):
             ks = keystr(ev)
             cmdline = self._binds[self._mode].get(ks) if ks else None

@@ -127,10 +127,6 @@ ApplicationWindow {
         anchors.fill: parent
         active: false
         z: 10
-        function toggle() {
-            active = true
-            item.toggle()
-        }
         sourceComponent: CheatSheet {}
     }
 
@@ -145,12 +141,14 @@ ApplicationWindow {
         }
         onLoaded: item.start()
     }
-    // hide the overlay whenever we leave bookmarks mode
+    // overlays are mode-driven: they vanish the moment we leave their mode
     Connections {
         target: Vim
         function onModeChanged() {
             if (Vim.mode !== "bookmarks" && bookmarksList.active)
                 bookmarksList.active = false
+            if (Vim.mode !== "help" && help.active)
+                help.active = false
         }
     }
 
@@ -175,7 +173,7 @@ ApplicationWindow {
             v.zoomFactor = step === 0 ? 1.0
                 : Math.max(0.3, Math.min(4.0, v.zoomFactor + step))
         }
-        function onHelpRequested() { help.toggle() }
+        function onHelpRequested() { help.active = true }
         function onBookmarksRequested() { bookmarksList.active = true }
         function onNavRequested(url) {
             var v = win.currentView()

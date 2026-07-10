@@ -1,12 +1,11 @@
 import QtQuick
 
-// A quick key reference — toggled with ? (help command). Behind a Loader so it
-// costs nothing until first opened.
+// A quick key reference — opened with h or ? (help mode). Behind a Loader so it
+// costs nothing until first opened; it exists only while Vim.mode === "help",
+// so h / ? / q / Esc / a backdrop click all close it by returning to normal.
 Item {
     id: root
-    property bool shown: false
-    function toggle() { shown = !shown }
-    visible: shown
+    function close() { Vim.setMode("normal") }
 
     readonly property var sections: [
         { title: "move", keys: [
@@ -31,7 +30,7 @@ Item {
             [":tab <q>", "switch to a tab"], [":bm", "bookmark this page"]] }
     ]
 
-    MouseArea { anchors.fill: parent; onClicked: root.shown = false }
+    MouseArea { anchors.fill: parent; onClicked: root.close() }
 
     Rectangle {
         anchors.centerIn: parent
@@ -53,7 +52,7 @@ Item {
         }
         Text {
             anchors { top: parent.top; right: parent.right; margins: 20 }
-            text: "? or click to close"
+            text: "h / ? / esc / click to close"
             color: Theme.subtext
             font.pixelSize: 11
             font.family: Theme.font
