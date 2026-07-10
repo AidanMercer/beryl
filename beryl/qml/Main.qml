@@ -23,6 +23,10 @@ ApplicationWindow {
         if (v)
             v.forceActiveFocus()
     }
+    function openUrl(u) {
+        var v = currentView()
+        if (v) v.url = u
+    }
 
     property string msg: ""
     property bool msgError: false
@@ -130,6 +134,26 @@ ApplicationWindow {
         sourceComponent: CheatSheet {}
     }
 
+    Loader {
+        id: bookmarksList
+        anchors.fill: parent
+        active: false
+        z: 11
+        sourceComponent: BookmarksList {
+            onOpenHere: function (url) { win.openUrl(url) }
+            onOpenTab: function (url) { Tabs.newTab(url, false) }
+        }
+        onLoaded: item.start()
+    }
+    // hide the overlay whenever we leave bookmarks mode
+    Connections {
+        target: Vim
+        function onModeChanged() {
+            if (Vim.mode !== "bookmarks" && bookmarksList.active)
+                bookmarksList.active = false
+        }
+    }
+
     // ---- python → view dispatch -----------------------------------------------
     Connections {
         target: api
@@ -152,6 +176,7 @@ ApplicationWindow {
                 : Math.max(0.3, Math.min(4.0, v.zoomFactor + step))
         }
         function onHelpRequested() { help.toggle() }
+        function onBookmarksRequested() { bookmarksList.active = true }
         function onNavRequested(url) {
             var v = win.currentView()
             if (v) v.url = url

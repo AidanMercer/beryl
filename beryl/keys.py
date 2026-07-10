@@ -19,7 +19,8 @@ DEFAULT_BINDS = {
         "o": "cmdline-open :open ", "O": "cmdline-open-url",
         "t": "cmdline-open :tabopen ",
         "T": "cmdline-open :tab ",
-        "b": "cmdline-open :open ",
+        "b": "bookmarks-open",
+        "h": "help",
         "f": "hint", "F": "hint-tab",
         "gi": "focus-input",
         "i": "mode-insert",
@@ -108,6 +109,7 @@ class KeyController(QObject):
     modeChanged = Signal()
     pendingChanged = Signal()
     promptAnswer = Signal(str)   # "y" / "n" / "<Esc>" while a prompt bar is up
+    listKey = Signal(str)        # every key while a list overlay (bookmarks) is up
 
     def __init__(self, cfg, api, parent=None):
         super().__init__(parent)
@@ -206,6 +208,11 @@ class KeyController(QObject):
         if self._mode == "command":
             self.set_mode("normal")
 
+    @Slot(str)
+    def setMode(self, mode):
+        """QML-callable (overlays hand focus back with setMode('normal'))."""
+        self.set_mode(mode)
+
     # ---- the filter feeds these ----------------------------------------------
     def press(self, ev):
         """Record the decision per key code so the paired release is always
@@ -226,6 +233,11 @@ class KeyController(QObject):
             if ks and ks not in ("DEAD",) and self._hints is not None:
                 self._hints.key(ks)
             return True           # hint mode owns every key
+        if self._mode == "bookmarks":
+            ks = keystr(ev)
+            if ks and ks != "DEAD":
+                self.listKey.emit(ks)
+            return True           # the overlay owns every key
         if self._mode in ("insert", "passthrough"):
             ks = keystr(ev)
             cmdline = self._binds[self._mode].get(ks) if ks else None

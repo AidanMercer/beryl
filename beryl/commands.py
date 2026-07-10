@@ -219,6 +219,14 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
             bookmarks.add(tabs.currentUrl, tabs.currentTitle)
             api.toast.emit("bookmarked", False)
 
+    @command("bookmarks-open")
+    def bookmarks_open(count=1, arg=""):
+        if bookmarks is None or not bookmarks.all():
+            api.toast.emit("no bookmarks yet — press * to add this page", False)
+            return
+        keys.set_mode("bookmarks")
+        api.bookmarksRequested.emit()
+
     @command("help")
     def help_(count=1, arg=""):
         api.helpRequested.emit()

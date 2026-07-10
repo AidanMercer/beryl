@@ -1,7 +1,7 @@
 import json
 import time
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import Property, QObject, Signal, Slot
 
 from . import config
 
@@ -37,9 +37,19 @@ class Bookmarks(QObject):
         except OSError as e:
             print(f"[bookmarks] save failed: {e}", flush=True)
 
+    @Property("QVariantList", notify=changed)
+    def items(self):
+        # newest first, so a fresh bookmark lands at the top of the list
+        return [{"url": b["url"], "title": b["title"]}
+                for b in reversed(self._items)]
+
     @Slot(str, result=bool)
     def contains(self, url):
         return url in self._urls
+
+    @Slot(str)
+    def removeUrl(self, url):
+        self.remove(url)
 
     def add(self, url, title):
         if not url or url in self._urls:

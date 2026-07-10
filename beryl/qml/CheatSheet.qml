@@ -20,11 +20,15 @@ Item {
         { title: "page & url", keys: [
             ["r / R", "reload / hard reload"], ["gu / gU", "url up / root"],
             ["zi / zo / zz", "zoom in / out / reset"], ["yy", "yank url"],
-            ["p / P", "paste-go (here / tab)"], ["* ", "toggle bookmark"]] },
+            ["p / P", "paste-go (here / tab)"]] },
+        { title: "bookmarks & help", keys: [
+            ["*", "bookmark this page (★)"], ["b", "open bookmarks list"],
+            ["h / ?", "this help"], [":clear", "wipe cookies+history"],
+            [":w", "save session"], ["ZZ", "quit"]] },
         { title: "modes & ex", keys: [
-            ["i / Esc", "insert / normal"], ["S-Esc", "passthrough"],
-            [": ", "command line"], [":clear", "wipe cookies+history"],
-            [":w", "save session"], ["ZZ", "quit"]] }
+            ["i / Esc", "insert / normal"], ["S-Esc", "passthrough (avd)"],
+            [":", "command line"], [":open / :tabopen", "url or search"],
+            [":tab <q>", "switch to a tab"], [":bm", "bookmark this page"]] }
     ]
 
     MouseArea { anchors.fill: parent; onClicked: root.shown = false }
