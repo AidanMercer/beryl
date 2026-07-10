@@ -1,0 +1,80 @@
+import QtQuick
+
+// The tab strip: mica's pill row, model-driven. Click activates, middle-click
+// closes, the 2px underline is the load progress.
+Item {
+    id: root
+
+    Row {
+        anchors.left: parent.left
+        anchors.leftMargin: 4
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: 4
+
+        Repeater {
+            model: Tabs
+
+            Rectangle {
+                required property int index
+                required property string title
+                required property string url
+                required property bool loading
+                required property int progress
+                readonly property bool active: index === Tabs.currentIndex
+
+                height: 24
+                width: Math.min(content.implicitWidth + 18, 220)
+                radius: Theme.radiusSm
+                color: active ? Theme.sel : (hover.hovered ? Theme.glassSoft : "transparent")
+                clip: true
+
+                HoverHandler { id: hover }
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton | Qt.MiddleButton
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: function (mouse) {
+                        if (mouse.button === Qt.MiddleButton)
+                            Tabs.closeTab(index)
+                        else
+                            Tabs.activate(index)
+                    }
+                }
+
+                Row {
+                    id: content
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.leftMargin: 9
+                    spacing: 6
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: index + 1
+                        color: active ? Theme.accent : Theme.subtext
+                        font.pixelSize: 11
+                        font.family: Theme.font
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: title !== "" ? title : (url !== "" ? url : "new tab")
+                        color: active ? Theme.selText : Theme.text
+                        font.pixelSize: 12
+                        font.family: Theme.font
+                        elide: Text.ElideRight
+                        width: Math.min(implicitWidth, 180)
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    height: 2
+                    radius: 1
+                    visible: loading
+                    width: parent.width * progress / 100
+                    color: Theme.accent2
+                }
+            }
+        }
+    }
+}

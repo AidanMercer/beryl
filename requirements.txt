@@ -1,0 +1,6 @@
+# beryl needs PySide6 with the WebEngine libs present (arch: qt6-webengine) and
+# python-adblock (Brave's adblock-rust bindings) for the filter-list blocker.
+# Without python-adblock beryl still runs — the blocker just stays off.
+#   sudo pacman -S qt6-webengine python-adblock
+PySide6>=6.8
+adblock>=0.6
