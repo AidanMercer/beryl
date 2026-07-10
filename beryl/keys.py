@@ -18,13 +18,22 @@ DEFAULT_BINDS = {
         "r": "reload", "R": "reload-bypass",
         "o": "cmdline-open :open ", "O": "cmdline-open-url",
         "t": "cmdline-open :tabopen ",
+        "T": "cmdline-open :tab ",
+        "b": "cmdline-open :open ",
+        "f": "hint", "F": "hint-tab",
+        "gi": "focus-input",
         "i": "mode-insert",
         "x": "tab-close", "X": "tab-undo-close",
         "J": "tab-prev", "K": "tab-next",
+        "gu": "url-up", "gU": "url-root",
+        "zi": "zoom-in", "zo": "zoom-out", "zz": "zoom-reset",
+        "m": "mark-set", "'": "mark-jump",
         "yy": "yank-url",
         "p": "paste-go", "P": "paste-go-tab",
+        "*": "bookmark-toggle",
         ":": "cmdline-open :", "/": "cmdline-open /",
         "n": "search-next", "N": "search-prev",
+        "?": "help",
         "<Esc>": "search-stop",
         "<S-Esc>": "mode-passthrough",
         "ZZ": "quit",
@@ -104,6 +113,7 @@ class KeyController(QObject):
         super().__init__(parent)
         self._cfg = cfg
         self._api = api
+        self._hints = None
         self._registry = {}
         self._mode = "normal"
         self._binds = {}
@@ -122,6 +132,9 @@ class KeyController(QObject):
 
     def set_registry(self, registry):
         self._registry = registry
+
+    def set_hints(self, hints):
+        self._hints = hints
 
     def reload_binds(self):
         """DEFAULT_BINDS with the config's [binds.*] merged over it per key;
@@ -208,6 +221,11 @@ class KeyController(QObject):
     def _press(self, ev):
         if self._mode == "command":
             return False          # the cmdline TextField owns its own keys
+        if self._mode == "hint":
+            ks = keystr(ev)
+            if ks and ks not in ("DEAD",) and self._hints is not None:
+                self._hints.key(ks)
+            return True           # hint mode owns every key
         if self._mode in ("insert", "passthrough"):
             ks = keystr(ev)
             cmdline = self._binds[self._mode].get(ks) if ks else None

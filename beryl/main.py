@@ -11,9 +11,11 @@ from PySide6.QtWebEngineQuick import QtWebEngineQuick
 from . import commands, config, ipc, webprofile
 from .adblock import Blocker
 from .api import Api
+from .bookmarks import Bookmarks
 from .completion import Completion
 from .downloads import Downloads
 from .history import History
+from .hints import Hints
 from .keys import KeyController, KeyFilter
 from .session import Session
 from .tabs import TabModel
@@ -107,12 +109,17 @@ def main():
     keys = KeyController(cfg, api, app)
     history = History(cfg, app)
     session = Session(cfg, tabs, app)
+    bookmarks = Bookmarks(app)
+    hints = Hints(cfg, api, tabs, app)
     registry = commands.build(api, tabs, keys, cfg,
-                              profile=profile, history=history, session=session)
+                              profile=profile, history=history, session=session,
+                              hints=hints, bookmarks=bookmarks)
     keys.set_registry(registry)
+    keys.set_hints(hints)
+    hints.set_keys(keys)
     api.set_ex_handler(lambda line: commands.run_ex(line, registry, api))
     completion = Completion(app)
-    completion.set_sources(registry, tabs, history)
+    completion.set_sources(registry, tabs, history, bookmarks)
 
     def apply_font():
         app.setFont(QFont(theme.theme_dict()["font"]))
@@ -130,6 +137,7 @@ def main():
     ctx.setContextProperty("Dl", downloads)
     ctx.setContextProperty("History", history)
     ctx.setContextProperty("Completion", completion)
+    ctx.setContextProperty("Bookmarks", bookmarks)
 
     def retheme():
         ctx.setContextProperty("Theme", theme.theme_dict())

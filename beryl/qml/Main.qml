@@ -118,21 +118,40 @@ ApplicationWindow {
         onClosed: win.refocusView()
     }
 
+    Loader {
+        id: help
+        anchors.fill: parent
+        active: false
+        z: 10
+        function toggle() {
+            active = true
+            item.toggle()
+        }
+        sourceComponent: CheatSheet {}
+    }
+
     // ---- python → view dispatch -----------------------------------------------
     Connections {
         target: api
 
-        function onJsRequested(script, rid) {
+        function onJsRequested(script, world, rid) {
             var v = win.currentView()
             if (!v) {
                 if (rid > 0) api.jsDone(rid, null)
                 return
             }
             if (rid > 0)
-                v.runJavaScript(script, function (res) { api.jsDone(rid, res) })
+                v.runJavaScript(script, world, function (res) { api.jsDone(rid, res) })
             else
-                v.runJavaScript(script)
+                v.runJavaScript(script, world)
         }
+        function onZoomRequested(step) {
+            var v = win.currentView()
+            if (!v) return
+            v.zoomFactor = step === 0 ? 1.0
+                : Math.max(0.3, Math.min(4.0, v.zoomFactor + step))
+        }
+        function onHelpRequested() { help.toggle() }
         function onNavRequested(url) {
             var v = win.currentView()
             if (v) v.url = url

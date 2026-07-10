@@ -8,7 +8,9 @@ class Api(QObject):
     current view and answers back with the request id. Keeps every command
     testable against a mock."""
 
-    jsRequested = Signal(str, int)            # script, requestId (0 = fire-and-forget)
+    jsRequested = Signal(str, int, int)       # script, worldId, requestId (0 = fire-and-forget)
+    zoomRequested = Signal(float)             # step; 0 = reset
+    helpRequested = Signal()                  # toggle the cheat sheet
     navRequested = Signal(str)                # url → current view
     histRequested = Signal(int)               # -1 back / +1 forward
     reloadRequested = Signal(bool)            # bypass cache?
@@ -29,13 +31,15 @@ class Api(QObject):
         self._ex = fn
 
     # ---- python side ---------------------------------------------------------
-    def js(self, script, cb=None):
+    # worlds: 0 = MainWorld (the page's JS), 1 = ApplicationWorld (isolated —
+    # where hints.js lives, out of the page's reach)
+    def js(self, script, cb=None, world=0):
         rid = 0
         if cb is not None:
             self._rid += 1
             rid = self._rid
             self._cbs[rid] = cb
-        self.jsRequested.emit(script, rid)
+        self.jsRequested.emit(script, world, rid)
 
     def find(self, term, backwards=False):
         if term:

@@ -46,6 +46,12 @@ WebEngineView {
             sourceUrl: Qt.resolvedUrl("../js/editable.js"),
             injectionPoint: WebEngineScript.DocumentReady,
             worldId: WebEngineScript.MainWorld
+        },
+        {
+            name: "hints",
+            sourceUrl: Qt.resolvedUrl("../js/hints.js"),
+            injectionPoint: WebEngineScript.DocumentReady,
+            worldId: WebEngineScript.ApplicationWorld
         }
     ]
 

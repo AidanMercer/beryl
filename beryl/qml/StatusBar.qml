@@ -49,13 +49,24 @@ Item {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
+            property int rev: 0   // bump to re-eval contains() when marks change
+            Connections { target: Bookmarks; function onChanged() { parent.rev++ } }
+            visible: (rev, Bookmarks.contains(Tabs.currentUrl))
+            text: "★"
+            color: Theme.warn
+            font.pixelSize: 12
+            font.family: Theme.font
+        }
+
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
             text: root.message !== "" ? root.message : Tabs.currentUrl
             color: root.message !== "" ? (root.messageError ? Theme.warn : Theme.accent2)
                                        : Theme.subtext
             font.pixelSize: 12
             font.family: Theme.font
             elide: Text.ElideMiddle
-            width: Math.min(implicitWidth, parent.width - 140)
+            width: Math.min(implicitWidth, parent.width - 160)
         }
     }
 

@@ -6,7 +6,7 @@ from PySide6.QtCore import (Property, QAbstractListModel, QModelIndex, Qt,
 # Everything here is local: command names, open tabs, history. Keystrokes in
 # the cmdline never touch the network — that's a feature, not a gap.
 
-_ARG_COMMANDS = ("open", "tabopen", "o", "t")
+_ARG_COMMANDS = ("open", "tabopen", "o", "t", "tab", "T")
 
 
 def _fuzzy(query, text):
@@ -41,11 +41,13 @@ class Completion(QAbstractListModel):
         self._registry = {}
         self._tabs = None
         self._history = None
+        self._bookmarks = None
 
-    def set_sources(self, registry, tabs, history):
+    def set_sources(self, registry, tabs, history, bookmarks=None):
         self._registry = registry
         self._tabs = tabs
         self._history = history
+        self._bookmarks = bookmarks
 
     # ---- model -------------------------------------------------------------
     def roleNames(self):
@@ -102,6 +104,12 @@ class Completion(QAbstractListModel):
                 if s is not None and url:
                     out.append((s + 5.0, {"label": title or url, "detail": url,
                                           "insert": f"{head} {url}"}))
+        if self._bookmarks is not None:
+            for url, title in self._bookmarks.all():
+                s = _fuzzy(arg, url + " " + title)
+                if s is not None:
+                    out.append((s + 3.0, {"label": ("★ " + (title or url)),
+                                          "detail": url, "insert": f"{head} {url}"}))
         if self._history is not None:
             for url, title, visits, last_ts in self._history.search(arg):
                 s = _fuzzy(arg, url + " " + (title or ""))

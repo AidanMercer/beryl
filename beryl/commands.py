@@ -1,5 +1,5 @@
 import re
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit, urlunsplit
 
 from PySide6.QtGui import QGuiApplication
 
@@ -14,6 +14,9 @@ _ALIASES = {
     "tc": "tab-close",
     "w": "session-save",
     "nohl": "search-stop",
+    "bm": "bookmark-add",
+    "bookmark": "bookmark-add",
+    "clear": "clear",
 }
 
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
@@ -42,8 +45,10 @@ def to_url(text, cfg):
     return cfg["search"].format(quote(t))
 
 
-def build(api, tabs, keys, cfg, profile=None, history=None, session=None):
+def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
+          hints=None, bookmarks=None):
     reg = {}
+    marks = {}   # per-url scroll marks: {char: (url, x, y)} — session-lived
 
     def command(name, takes_key=False):
         def deco(fn):
@@ -132,6 +137,100 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None):
     @command("mode-passthrough")
     def mode_passthrough(count=1, arg=""):
         keys.set_mode("passthrough")
+
+    # ---- hints / gi ----------------------------------------------------------
+    @command("hint")
+    def hint(count=1, arg=""):
+        if hints is not None:
+            hints.start(new_tab=False)
+
+    @command("hint-tab")
+    def hint_tab(count=1, arg=""):
+        if hints is not None:
+            hints.start(new_tab=True)
+
+    @command("focus-input")
+    def focus_input(count=1, arg=""):
+        api.js("__beryl.hints.firstInput()", None, world=1)
+
+    # ---- url surgery / zoom --------------------------------------------------
+    @command("url-up")
+    def url_up(count=1, arg=""):
+        parts = urlsplit(tabs.currentUrl)
+        path = parts.path.rstrip("/")
+        up = path.rsplit("/", 1)[0] if "/" in path else ""
+        api.navRequested.emit(urlunsplit((parts.scheme, parts.netloc, up + "/", "", "")))
+
+    @command("url-root")
+    def url_root(count=1, arg=""):
+        parts = urlsplit(tabs.currentUrl)
+        if parts.netloc:
+            api.navRequested.emit(f"{parts.scheme}://{parts.netloc}/")
+
+    @command("zoom-in")
+    def zoom_in(count=1, arg=""):
+        api.zoomRequested.emit(0.1 * count)
+
+    @command("zoom-out")
+    def zoom_out(count=1, arg=""):
+        api.zoomRequested.emit(-0.1 * count)
+
+    @command("zoom-reset")
+    def zoom_reset(count=1, arg=""):
+        api.zoomRequested.emit(0.0)
+
+    # ---- marks (per-url scroll position) -------------------------------------
+    @command("mark-set", takes_key=True)
+    def mark_set(count=1, arg=""):
+        url = tabs.currentUrl
+        def store(pos):
+            if isinstance(pos, list) and len(pos) == 2:
+                marks[arg] = (url, pos[0], pos[1])
+        api.js("[window.scrollX, window.scrollY]", store)
+
+    @command("mark-jump", takes_key=True)
+    def mark_jump(count=1, arg=""):
+        m = marks.get(arg)
+        if not m:
+            api.toast.emit(f"no mark {arg}", True)
+            return
+        url, x, y = m
+        if url == tabs.currentUrl:
+            api.js(f"window.scrollTo({{top:{y},left:{x},behavior:'instant'}})")
+        else:
+            api.navRequested.emit(url)   # cross-page jump just navigates for now
+
+    # ---- bookmarks -----------------------------------------------------------
+    @command("bookmark-toggle")
+    def bookmark_toggle(count=1, arg=""):
+        if bookmarks is None:
+            return
+        url, title = tabs.currentUrl, tabs.currentTitle
+        if bookmarks.contains(url):
+            bookmarks.remove(url)
+            api.toast.emit("bookmark removed", False)
+        else:
+            bookmarks.add(url, title)
+            api.toast.emit("bookmarked", False)
+
+    @command("bookmark-add")
+    def bookmark_add(count=1, arg=""):
+        if bookmarks is not None:
+            bookmarks.add(tabs.currentUrl, tabs.currentTitle)
+            api.toast.emit("bookmarked", False)
+
+    @command("help")
+    def help_(count=1, arg=""):
+        api.helpRequested.emit()
+
+    @command("tab")
+    def tab(count=1, arg=""):
+        """:tab <query> — switch to the first tab whose url/title matches."""
+        q = arg.lower()
+        for i, (url, title) in enumerate(tabs.snapshot()):
+            if q in url.lower() or q in title.lower():
+                tabs.activate(i)
+                return
 
     @command("cmdline-open")
     def cmdline_open(count=1, arg=""):
