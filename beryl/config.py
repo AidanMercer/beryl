@@ -22,6 +22,19 @@ _DEFAULTS = {
     "history_days": 180,
     "restore_session": True,
     "tab_freeze_minutes": 5,
+    # third-party cookies are blocked EXCEPT cookies belonging to these
+    # domains — microsoft sso silently refreshes tokens through
+    # login.microsoftonline.com iframes and breaks without them
+    "cookie_allow_3p": [
+        "login.microsoftonline.com", "login.live.com",
+        "login.windows.net", "login.microsoft.com",
+    ],
+    # sites that get the whole keyboard automatically (remote desktops etc);
+    # fnmatch patterns against the host. S-Esc still toggles manually.
+    "passthrough_sites": [
+        "*.wvd.microsoft.com", "windows.cloud.microsoft",
+        "*.cloudpc.microsoft.com",
+    ],
 }
 
 # written to ~/.config/beryl/config.toml on first run so there's something to edit
@@ -42,6 +55,19 @@ adblock_update_days = 7    # refresh easylist/easyprivacy this often
 history_days = 180         # visits older than this are purged at startup
 restore_session = true     # reopen last session's tabs (lazily) on launch
 tab_freeze_minutes = 5     # freeze background tabs after this long hidden
+
+# third-party cookies are blocked except cookies belonging to these domains
+# (microsoft sso needs its login iframes; add your idp here if sso loops)
+cookie_allow_3p = [
+  "login.microsoftonline.com", "login.live.com",
+  "login.windows.net", "login.microsoft.com",
+]
+
+# hosts that automatically get the whole keyboard (remote desktops like avd);
+# fnmatch patterns. shift+esc toggles passthrough manually anywhere.
+passthrough_sites = [
+  "*.wvd.microsoft.com", "windows.cloud.microsoft", "*.cloudpc.microsoft.com",
+]
 
 # key overrides merge over the defaults per key; "" unbinds a default.
 # sequences use single chars and <angle> notation: "gg", "<C-d>", "<Esc>".

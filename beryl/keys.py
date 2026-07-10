@@ -1,3 +1,6 @@
+from fnmatch import fnmatch
+from urllib.parse import urlsplit
+
 from PySide6.QtCore import Property, QEvent, QObject, Qt, QTimer, Signal, Slot
 
 # The vim layer's entry point: every key in the app passes through KeyFilter
@@ -95,6 +98,7 @@ class KeyController(QObject):
     the binds come straight from the TOML; QML only renders mode + pending."""
     modeChanged = Signal()
     pendingChanged = Signal()
+    promptAnswer = Signal(str)   # "y" / "n" / "<Esc>" while a prompt bar is up
 
     def __init__(self, cfg, api, parent=None):
         super().__init__(parent)
@@ -107,7 +111,8 @@ class KeyController(QObject):
         self._seq = ""
         self._capture = None       # (command, count) waiting for one raw key
         self._pressed = {}         # key code → did we consume its press?
-        self._insert_reason = "manual"
+        self._mode_reason = "manual"
+        self._prompt_active = False
 
         self._seq_timer = QTimer(self)
         self._seq_timer.setSingleShot(True)
@@ -147,7 +152,7 @@ class KeyController(QObject):
             return
         old = self._mode
         self._mode = mode
-        self._insert_reason = reason
+        self._mode_reason = reason
         self._reset_pending()
         self.modeChanged.emit()
         # leaving insert/passthrough: blur the page's editable so stray input
@@ -162,8 +167,25 @@ class KeyController(QObject):
         a manual `i` doesn't get cancelled by page focus noise."""
         if on and self._mode == "normal":
             self.set_mode("insert", reason="page")
-        elif not on and self._mode == "insert" and self._insert_reason == "page":
+        elif not on and self._mode == "insert" and self._mode_reason == "page":
             self.set_mode("normal")
+
+    def site_changed(self, url):
+        """Remote-desktop sites (AVD) get the whole keyboard automatically;
+        leaving one hands it back. A manual S-Esc passthrough is left alone."""
+        host = urlsplit(url).hostname or ""
+        wanted = any(fnmatch(host, pat)
+                     for pat in self._cfg.get("passthrough_sites", []))
+        if wanted and self._mode in ("normal", "insert"):
+            self.set_mode("passthrough", reason="site")
+        elif not wanted and self._mode == "passthrough" \
+                and self._mode_reason == "site":
+            self.set_mode("normal")
+
+    @Slot(bool)
+    def setPromptActive(self, on):
+        """The permission bar is up: y/n/Esc answer it from normal mode."""
+        self._prompt_active = bool(on)
 
     @Slot()
     def cmdlineClosed(self):
@@ -200,6 +222,10 @@ class KeyController(QObject):
             return False          # bare modifier — page may track it
         if ks == "DEAD":
             return True           # never let composition start in normal mode
+
+        if self._prompt_active and ks in ("y", "n", "<Esc>"):
+            self.promptAnswer.emit(ks)
+            return True
 
         if self._capture is not None:
             cmdline, count = self._capture

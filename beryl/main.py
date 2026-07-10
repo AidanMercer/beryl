@@ -169,6 +169,9 @@ def main():
     session.wire()
     app.aboutToQuit.connect(session.flush)
 
+    # remote-desktop sites (AVD) auto-toggle passthrough as tabs/urls change
+    tabs.currentInfoChanged.connect(lambda: keys.site_changed(tabs.currentUrl))
+
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
     if not engine.rootObjects():
         sys.exit(1)

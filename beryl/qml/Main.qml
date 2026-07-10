@@ -29,8 +29,14 @@ ApplicationWindow {
     function toast(t, err) { msg = t; msgError = err === true; msgTimer.restart() }
     Timer { id: msgTimer; interval: 2600; onTriggered: win.msg = "" }
 
+    // page fullscreen (avd, video): chrome melts away, page gets every pixel
+    readonly property bool fs: visibility === Window.FullScreen
+
+    function askPermission(permission) { permPrompt.ask(permission) }
+
     // ---- frosted glass ---------------------------------------------------------
     Rectangle {
+        visible: !win.fs
         anchors.fill: parent
         radius: Theme.radius
         color: Theme.bg
@@ -40,8 +46,18 @@ ApplicationWindow {
 
     TabStrip {
         id: tabstrip
+        visible: !win.fs
         anchors { top: parent.top; left: parent.left; right: parent.right; margins: Theme.pad }
         height: 28
+    }
+
+    PermissionPrompt {
+        id: permPrompt
+        anchors { top: tabstrip.bottom; left: parent.left; right: parent.right }
+        anchors.topMargin: 2
+        anchors.leftMargin: Theme.pad
+        anchors.rightMargin: Theme.pad
+        z: 5
     }
 
     // ---- pages -------------------------------------------------------------------
@@ -52,10 +68,12 @@ ApplicationWindow {
     Item {
         id: viewport
         anchors {
-            top: tabstrip.bottom; topMargin: 6
-            left: parent.left; leftMargin: Theme.pad
-            right: parent.right; rightMargin: Theme.pad
-            bottom: footer.top; bottomMargin: 6
+            top: win.fs ? parent.top : tabstrip.bottom
+            topMargin: win.fs ? 0 : 6
+            left: parent.left; leftMargin: win.fs ? 0 : Theme.pad
+            right: parent.right; rightMargin: win.fs ? 0 : Theme.pad
+            bottom: win.fs ? parent.bottom : footer.top
+            bottomMargin: win.fs ? 0 : 6
         }
 
         Repeater {
@@ -87,6 +105,7 @@ ApplicationWindow {
 
     StatusBar {
         id: footer
+        visible: !win.fs
         anchors { bottom: parent.bottom; left: parent.left; right: parent.right; margins: Theme.pad }
         height: 24
         message: win.msg

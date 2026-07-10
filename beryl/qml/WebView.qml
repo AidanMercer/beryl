@@ -16,6 +16,7 @@ WebEngineView {
     settings.dnsPrefetchEnabled: false         // no speculative traffic
     settings.hyperlinkAuditingEnabled: false   // no a[ping] beacons
     settings.webRTCPublicInterfacesOnly: true  // no local-IP leak
+    settings.fullScreenSupportEnabled: true    // avd / video fullscreen
 
     Component.onCompleted: {
         if (initialUrl !== "")
@@ -71,5 +72,18 @@ WebEngineView {
     // (M3 switches to request.openIn so POST/background hints survive.)
     onNewWindowRequested: function (request) {
         Tabs.newTab(request.requestedUrl.toString(), false)
+    }
+
+    onFullScreenRequested: function (request) {
+        request.accept()
+        Window.window.visibility = request.toggleOn ? Window.FullScreen
+                                                    : Window.Windowed
+    }
+
+    onPermissionRequested: function (permission) {
+        if (view.visible)
+            Window.window.askPermission(permission)
+        else
+            permission.deny()   // background tabs don't get to nag
     }
 }

@@ -67,6 +67,15 @@ class Api(QObject):
     def runFind(self, text):
         self.find(text)
 
+    @Slot(int, result=str)
+    def permName(self, value):
+        """Human label for QWebEnginePermission.PermissionType (values pinned
+        against the 6.11 enum)."""
+        return {1: "microphone", 2: "camera", 3: "camera + microphone",
+                4: "screen capture", 5: "screen capture + audio",
+                6: "mouse lock", 7: "notifications", 8: "location",
+                9: "clipboard", 10: "local fonts"}.get(int(value), "a permission")
+
     @Slot(int, int)
     def findResult(self, matches, active):
         """WebEngine reports 0/0 both for 'no matches' and 'search cleared' —
