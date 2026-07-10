@@ -89,21 +89,42 @@ def main():
     app.setApplicationName("beryl")
     app.setDesktopFileName("beryl")   # Wayland app_id Hyprland matches
 
+    importing = "--import-zen" in sys.argv[1:]
+
     # single instance: a Chromium profile can't be shared, so a second launch
     # hands its urls over the local socket and exits before touching anything.
     args = _url_args(sys.argv)
-    if ipc.try_forward(args):
+    if importing:
+        # import owns the profile too — it can't run alongside a live beryl
+        if ipc.try_forward([]):
+            print("[import] beryl is already running — close it first "
+                  "(quit with ZZ), then re-run the import", flush=True)
+            return
+    elif ipc.try_forward(args):
         print("[ipc] forwarded to running instance", flush=True)
         return
-    server = ipc.InstanceServer(app)
 
     config.ensure()
     cfg = config.load()
 
-    theme = ThemeManager(app)
     downloads = Downloads(cfg, app)
     blocker = Blocker(cfg, app)
     profile = webprofile.build(cfg, downloads, blocker, app)
+
+    if importing:
+        from . import importer
+        imp = importer.Importer(profile, app)
+        eng = QQmlApplicationEngine()
+        eng.rootContext().setContextProperty("WebProfile", profile)
+        eng.rootContext().setContextProperty("importer", imp)
+        imp.start()
+        eng.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Import.qml")))
+        if not eng.rootObjects():
+            sys.exit(1)
+        sys.exit(app.exec())
+
+    server = ipc.InstanceServer(app)
+    theme = ThemeManager(app)
     tabs = TabModel(cfg, app)
     api = Api(app)
     keys = KeyController(cfg, api, app)

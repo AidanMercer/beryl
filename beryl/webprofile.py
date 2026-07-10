@@ -45,18 +45,18 @@ def build(cfg, downloads, blocker, parent=None):
     the pieces that hang off it — download adoption, the adblock/privacy
     interceptor, the cookie filter — all live on this side. QML views bind it
     via the WebProfile context property."""
-    profile = QQuickWebEngineProfile(parent)
-    profile.setStorageName("beryl")
-    profile.setPersistentStoragePath(str(config.DATA_HOME / "profile"))
-    profile.setCachePath(str(config.CACHE_HOME / "webcache"))
-    profile.setHttpCacheType(QQuickWebEngineProfile.HttpCacheType.DiskHttpCache)
-    profile.setPersistentCookiesPolicy(
-        QQuickWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
-    # Qt persists per-site permission grants itself — no custom store needed
-    profile.setPersistentPermissionsPolicy(
-        QQuickWebEngineProfile.PersistentPermissionsPolicy.StoreOnDisk)
-
-    profile.setHttpUserAgent(_chrome_ua())
+    # the storage name MUST be a constructor arg — a default-constructed
+    # profile is off-the-record (in-memory) forever, and setStorageName after
+    # the fact does NOT switch it to persistent. Passing it here is what makes
+    # cookies/logins/cache survive a restart at all.
+    profile = QQuickWebEngineProfile(
+        "beryl", parent,
+        persistentStoragePath=str(config.DATA_HOME / "profile"),
+        cachePath=str(config.CACHE_HOME / "webcache"),
+        httpCacheType=QQuickWebEngineProfile.HttpCacheType.DiskHttpCache,
+        persistentCookiesPolicy=QQuickWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies,
+        persistentPermissionsPolicy=QQuickWebEngineProfile.PersistentPermissionsPolicy.StoreOnDisk,
+        httpUserAgent=_chrome_ua())
 
     profile.downloadRequested.connect(downloads.adopt)
     profile.presentNotification.connect(_notify)
