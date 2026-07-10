@@ -43,9 +43,15 @@ DEFAULT_BINDS = {
         "<Esc>": "mode-normal",
     },
     "passthrough": {
-        "<S-Esc>": "mode-normal",
+        # plain Esc has to reach the remote desktop, so the way out is a chord
+        # the remote won't use. both of these exit passthrough:
+        "<S-Esc>": "mode-normal",       # shift+esc
+        "<C-A-Esc>": "mode-normal",     # ctrl+alt+esc
     },
 }
+
+# shown in the status bar so the escape hatch is never a secret
+PASSTHROUGH_HINT = "ctrl+alt+esc to exit"
 
 _MODIFIER_KEYS = {
     Qt.Key.Key_Shift, Qt.Key.Key_Control, Qt.Key.Key_Alt, Qt.Key.Key_Meta,
@@ -125,6 +131,8 @@ class KeyController(QObject):
         self._pressed = {}         # key code → did we consume its press?
         self._mode_reason = "manual"
         self._prompt_active = False
+        self._pt_host = None        # host we last evaluated for auto-passthrough
+        self._pt_suppressed = False  # user manually left passthrough on this host
 
         self._seq_timer = QTimer(self)
         self._seq_timer.setSingleShot(True)
@@ -162,12 +170,21 @@ class KeyController(QObject):
     def pending(self):
         return self._count + self._seq
 
+    @Property(str, notify=modeChanged)
+    def modeHint(self):
+        return PASSTHROUGH_HINT if self._mode == "passthrough" else ""
+
     def set_mode(self, mode, reason="manual"):
         if mode == self._mode:
             return
         old = self._mode
         self._mode = mode
         self._mode_reason = reason
+        # a manual exit from an auto-passthrough site means "stop grabbing my
+        # keys here" — don't let the site's title updates yank us back in until
+        # we navigate somewhere else
+        if old == "passthrough" and mode == "normal" and reason == "manual":
+            self._pt_suppressed = True
         self._reset_pending()
         self.modeChanged.emit()
         # leaving insert/passthrough: blur the page's editable so stray input
@@ -187,11 +204,15 @@ class KeyController(QObject):
 
     def site_changed(self, url):
         """Remote-desktop sites (AVD) get the whole keyboard automatically;
-        leaving one hands it back. A manual S-Esc passthrough is left alone."""
+        leaving one hands it back. A manual passthrough (or a manual exit) is
+        left alone until the host actually changes."""
         host = urlsplit(url).hostname or ""
+        if host != self._pt_host:
+            self._pt_host = host
+            self._pt_suppressed = False   # new host — auto-passthrough is fair game again
         wanted = any(fnmatch(host, pat)
                      for pat in self._cfg.get("passthrough_sites", []))
-        if wanted and self._mode in ("normal", "insert"):
+        if wanted and not self._pt_suppressed and self._mode in ("normal", "insert"):
             self.set_mode("passthrough", reason="site")
         elif not wanted and self._mode == "passthrough" \
                 and self._mode_reason == "site":

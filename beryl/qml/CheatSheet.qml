@@ -26,8 +26,8 @@ Item {
             [":w", "save session"], ["ZZ", "quit"]] },
         { title: "modes & ex", keys: [
             ["i / Esc", "insert / normal"], ["S-Esc", "passthrough (avd)"],
-            [":", "command line"], [":open / :tabopen", "url or search"],
-            [":tab <q>", "switch to a tab"], [":bm", "bookmark this page"]] }
+            ["C-A-Esc", "exit passthrough"], [":", "command line"],
+            [":open / :tabopen", "url or search"], [":tab <q>", "switch tab"]] }
     ]
 
     MouseArea { anchors.fill: parent; onClicked: root.close() }

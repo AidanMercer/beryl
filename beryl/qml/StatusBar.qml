@@ -49,6 +49,15 @@ Item {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
+            visible: Vim.modeHint !== ""
+            text: Vim.modeHint
+            color: Theme.warn
+            font.pixelSize: 12
+            font.family: Theme.font
+        }
+
+        Text {
+            anchors.verticalCenter: parent.verticalCenter
             property int rev: 0   // bump to re-eval contains() when marks change
             Connections { target: Bookmarks; function onChanged() { parent.rev++ } }
             visible: (rev, Bookmarks.contains(Tabs.currentUrl))

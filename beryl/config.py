@@ -64,7 +64,8 @@ cookie_allow_3p = [
 ]
 
 # hosts that automatically get the whole keyboard (remote desktops like avd);
-# fnmatch patterns. shift+esc toggles passthrough manually anywhere.
+# fnmatch patterns. shift+esc enters passthrough manually anywhere; while in
+# passthrough, ctrl+alt+esc (or shift+esc) hands the keyboard back to beryl.
 passthrough_sites = [
   "*.wvd.microsoft.com", "windows.cloud.microsoft", "*.cloudpc.microsoft.com",
 ]
