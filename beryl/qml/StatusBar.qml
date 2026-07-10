@@ -6,6 +6,7 @@ Item {
     id: root
     property string message: ""
     property bool messageError: false
+    property string findCount: ""
 
     readonly property color _modeColor: Vim.mode === "insert" ? Theme.accent2
         : Vim.mode === "command" ? Theme.accent2
@@ -65,6 +66,13 @@ Item {
         anchors.rightMargin: 6
         spacing: 12
 
+        Text {
+            visible: root.findCount !== ""
+            text: root.findCount
+            color: Theme.accent2
+            font.pixelSize: 12
+            font.family: Theme.font
+        }
         Text {
             visible: Dl.activeCount > 0
             text: "↓" + Dl.activeCount + (Dl.percent >= 0 ? "  " + Dl.percent + "%" : "")

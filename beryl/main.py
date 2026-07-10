@@ -2,15 +2,20 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QFileSystemWatcher, QTimer, QUrl, qInstallMessageHandler
+from PySide6.QtCore import (QFileSystemWatcher, Qt, QTimer, QUrl,
+                            qInstallMessageHandler)
 from PySide6.QtGui import QFont, QGuiApplication, QSurfaceFormat
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtWebEngineQuick import QtWebEngineQuick
 
 from . import commands, config, ipc, webprofile
+from .adblock import Blocker
 from .api import Api
+from .completion import Completion
 from .downloads import Downloads
+from .history import History
 from .keys import KeyController, KeyFilter
+from .session import Session
 from .tabs import TabModel
 from .theme import ThemeManager
 
@@ -53,6 +58,10 @@ def _start_logging():
 
 
 def _qt_message_handler(mode, ctx, msg):
+    # page JS console output arrives here too (ctx.file = the page's script
+    # url) — that's the site's noise, not ours; keep it out of the log
+    if ctx.file and ctx.file.startswith(("http:", "https:")):
+        return
     loc = f" ({ctx.file}:{ctx.line})" if ctx.file else ""
     print(f"[qml] {msg}{loc}", file=sys.stderr, flush=True)
 
@@ -82,6 +91,7 @@ def main():
     # hands its urls over the local socket and exits before touching anything.
     args = _url_args(sys.argv)
     if ipc.try_forward(args):
+        print("[ipc] forwarded to running instance", flush=True)
         return
     server = ipc.InstanceServer(app)
 
@@ -90,13 +100,19 @@ def main():
 
     theme = ThemeManager(app)
     downloads = Downloads(cfg, app)
-    profile = webprofile.build(cfg, downloads, app)
+    blocker = Blocker(cfg, app)
+    profile = webprofile.build(cfg, downloads, blocker, app)
     tabs = TabModel(cfg, app)
     api = Api(app)
     keys = KeyController(cfg, api, app)
-    registry = commands.build(api, tabs, keys, cfg)
+    history = History(cfg, app)
+    session = Session(cfg, tabs, app)
+    registry = commands.build(api, tabs, keys, cfg,
+                              profile=profile, history=history, session=session)
     keys.set_registry(registry)
     api.set_ex_handler(lambda line: commands.run_ex(line, registry, api))
+    completion = Completion(app)
+    completion.set_sources(registry, tabs, history)
 
     def apply_font():
         app.setFont(QFont(theme.theme_dict()["font"]))
@@ -112,6 +128,8 @@ def main():
     ctx.setContextProperty("api", api)
     ctx.setContextProperty("WebProfile", profile)
     ctx.setContextProperty("Dl", downloads)
+    ctx.setContextProperty("History", history)
+    ctx.setContextProperty("Completion", completion)
 
     def retheme():
         ctx.setContextProperty("Theme", theme.theme_dict())
@@ -142,11 +160,14 @@ def main():
     if config.CONFIG_FILE.exists():
         watcher.addPath(str(config.CONFIG_FILE))
 
-    # first tabs: argv urls, else the homepage
+    # first tabs: last session (lazily), then argv urls, else the homepage
+    session.restore()
     for a in args:
         tabs.newTab(commands.to_url(a, cfg))
     if tabs.count == 0:
         tabs.newTab(cfg["homepage"])
+    session.wire()
+    app.aboutToQuit.connect(session.flush)
 
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
     if not engine.rootObjects():
@@ -166,8 +187,7 @@ def main():
 
     # permanent startup instrumentation — keep an eye on the "lightning fast"
     def on_frame():
-        win.frameSwapped.disconnect(on_frame)
         print(f"[startup] first frame in {time.monotonic() - t0:.3f}s", flush=True)
-    win.frameSwapped.connect(on_frame)
+    win.frameSwapped.connect(on_frame, Qt.ConnectionType.SingleShotConnection)
 
     sys.exit(app.exec())

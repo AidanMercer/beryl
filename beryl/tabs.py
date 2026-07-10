@@ -151,6 +151,27 @@ class TabModel(QAbstractListModel):
             self.currentIndexChanged.emit()
         self.currentInfoChanged.emit()
 
+    # ---- session support -------------------------------------------------------
+    def snapshot(self):
+        return [(t["url"], t["title"]) for t in self._tabs]
+
+    def restoreRows(self, rows, active):
+        """Bulk-insert dead rows (live=False) at startup; activate() wakes only
+        the current one. Call before any newTab."""
+        if not rows:
+            return
+        first = len(self._tabs)
+        self.beginInsertRows(QModelIndex(), first, first + len(rows) - 1)
+        for url, title in rows:
+            self._tabs.append({
+                "uid": self._next_uid, "url": url, "title": title, "icon": "",
+                "live": False, "loading": False, "progress": 0,
+            })
+            self._next_uid += 1
+        self.endInsertRows()
+        self.countChanged.emit()
+        self.activate(first + max(0, min(active, len(rows) - 1)))
+
     # ---- feedback from the QML views ----------------------------------------
     @Slot(int, str, "QVariant")
     def viewState(self, uid, key, value):

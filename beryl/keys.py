@@ -19,9 +19,11 @@ DEFAULT_BINDS = {
         "x": "tab-close", "X": "tab-undo-close",
         "J": "tab-prev", "K": "tab-next",
         "yy": "yank-url",
+        "p": "paste-go", "P": "paste-go-tab",
         ":": "cmdline-open :", "/": "cmdline-open /",
         "n": "search-next", "N": "search-prev",
         "<Esc>": "search-stop",
+        "<S-Esc>": "mode-passthrough",
         "ZZ": "quit",
     },
     "insert": {
@@ -105,6 +107,7 @@ class KeyController(QObject):
         self._seq = ""
         self._capture = None       # (command, count) waiting for one raw key
         self._pressed = {}         # key code → did we consume its press?
+        self._insert_reason = "manual"
 
         self._seq_timer = QTimer(self)
         self._seq_timer.setSingleShot(True)
@@ -139,12 +142,28 @@ class KeyController(QObject):
     def pending(self):
         return self._count + self._seq
 
-    def set_mode(self, mode):
+    def set_mode(self, mode, reason="manual"):
         if mode == self._mode:
             return
+        old = self._mode
         self._mode = mode
+        self._insert_reason = reason
         self._reset_pending()
         self.modeChanged.emit()
+        # leaving insert/passthrough: blur the page's editable so stray input
+        # (and IME composition) has nowhere to land in normal mode
+        if mode == "normal" and old in ("insert", "passthrough"):
+            self._api.js("if(document.activeElement)document.activeElement.blur()")
+
+    @Slot(bool)
+    def pageEditable(self, on):
+        """editable.js reports page focus moving in/out of a text field (only
+        the visible tab's bridge forwards). Auto-entered insert drops on blur;
+        a manual `i` doesn't get cancelled by page focus noise."""
+        if on and self._mode == "normal":
+            self.set_mode("insert", reason="page")
+        elif not on and self._mode == "insert" and self._insert_reason == "page":
+            self.set_mode("normal")
 
     @Slot()
     def cmdlineClosed(self):

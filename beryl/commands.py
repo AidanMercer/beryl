@@ -10,7 +10,10 @@ from PySide6.QtGui import QGuiApplication
 _ALIASES = {
     "q": "quit",
     "o": "open",
+    "t": "tabopen",
     "tc": "tab-close",
+    "w": "session-save",
+    "nohl": "search-stop",
 }
 
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
@@ -39,7 +42,7 @@ def to_url(text, cfg):
     return cfg["search"].format(quote(t))
 
 
-def build(api, tabs, keys, cfg):
+def build(api, tabs, keys, cfg, profile=None, history=None, session=None):
     reg = {}
 
     def command(name, takes_key=False):
@@ -160,6 +163,37 @@ def build(api, tabs, keys, cfg):
         if url:
             QGuiApplication.clipboard().setText(url)
             api.toast.emit(f"yanked {url}", False)
+
+    @command("paste-go")
+    def paste_go(count=1, arg=""):
+        text = QGuiApplication.clipboard().text().strip()
+        if text:
+            api.navRequested.emit(to_url(text, cfg))
+
+    @command("paste-go-tab")
+    def paste_go_tab(count=1, arg=""):
+        text = QGuiApplication.clipboard().text().strip()
+        if text:
+            tabs.newTab(to_url(text, cfg))
+
+    @command("session-save")
+    def session_save(count=1, arg=""):
+        if session is not None:
+            session.save()
+            api.toast.emit("session saved", False)
+
+    @command("clear")
+    def clear(count=1, arg=""):
+        """The quick nuke: cookies, http cache, history, session — persist by
+        default, wipe on demand."""
+        if profile is not None:
+            profile.cookieStore().deleteAllCookies()
+            profile.clearHttpCache()
+        if history is not None:
+            history.clear()
+        if session is not None:
+            session.clear()
+        api.toast.emit("cleared cookies, cache, history", False)
 
     @command("quit")
     def quit_(count=1, arg=""):

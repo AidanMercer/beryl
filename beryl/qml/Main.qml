@@ -141,6 +141,7 @@ ApplicationWindow {
             cmdline.open(prefix, prefill)
         }
         function onToast(t, e) { win.toast(t, e) }
+        function onFindCount(c) { footer.findCount = c }
     }
 
     Connections {

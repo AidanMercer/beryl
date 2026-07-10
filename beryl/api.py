@@ -15,6 +15,7 @@ class Api(QObject):
     findRequested = Signal(str, bool)         # term ("" clears), backwards
     cmdlineOpenRequested = Signal(str, str)   # prefix (":" or "/"), prefill
     toast = Signal(str, bool)                 # message, isError
+    findCount = Signal(str)                   # "3/17" for the statusbar, "" = hidden
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -22,6 +23,7 @@ class Api(QObject):
         self._rid = 0
         self._ex = None
         self.last_find = ""
+        self._find_active = False
 
     def set_ex_handler(self, fn):
         self._ex = fn
@@ -38,6 +40,9 @@ class Api(QObject):
     def find(self, term, backwards=False):
         if term:
             self.last_find = term
+        self._find_active = bool(term)
+        if not term:
+            self.findCount.emit("")
         self.findRequested.emit(term, backwards)
 
     def find_again(self, backwards):
@@ -61,3 +66,10 @@ class Api(QObject):
     @Slot(str)
     def runFind(self, text):
         self.find(text)
+
+    @Slot(int, int)
+    def findResult(self, matches, active):
+        """WebEngine reports 0/0 both for 'no matches' and 'search cleared' —
+        _find_active disambiguates."""
+        if self._find_active:
+            self.findCount.emit(f"{active}/{matches}")
