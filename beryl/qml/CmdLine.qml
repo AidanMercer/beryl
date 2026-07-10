@@ -148,10 +148,10 @@ Rectangle {
             Keys.onEscapePressed: root.close()
             Keys.onPressed: function (e) {
                 var ctrl = e.modifiers & Qt.ControlModifier
-                if (e.key === Qt.Key_Tab || (ctrl && e.key === Qt.Key_N)) {
+                if (e.key === Qt.Key_Down || e.key === Qt.Key_Tab || (ctrl && e.key === Qt.Key_N)) {
                     root.cycle(1)
                     e.accepted = true
-                } else if (e.key === Qt.Key_Backtab || (ctrl && e.key === Qt.Key_P)) {
+                } else if (e.key === Qt.Key_Up || e.key === Qt.Key_Backtab || (ctrl && e.key === Qt.Key_P)) {
                     root.cycle(-1)
                     e.accepted = true
                 }
