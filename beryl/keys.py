@@ -22,6 +22,7 @@ DEFAULT_BINDS = {
         "W": "cmdline-open :winopen ",
         "gw": "detach",
         "b": "bookmarks-open",
+        "gd": "downloads",
         "h": "help",
         "f": "hint", "F": "hint-tab",
         "gi": "focus-input",
@@ -277,11 +278,16 @@ class KeyController(QObject):
             if ks and ks not in ("DEAD",) and self._hints is not None:
                 self._hints.key(ks)
             return True           # hint mode owns every key
-        if self._mode == "bookmarks":
+        if self._mode in ("bookmarks", "downloads"):
             ks = keystr(ev)
+            if ks == "<Esc>":
+                # handled here, not in the overlay: if the overlay never opened
+                # (window lost focus mid-dispatch) Esc must still get you out
+                self.set_mode("normal")
+                return True
             if ks and ks != "DEAD":
                 self.listKey.emit(ks)
-            return True           # the overlay owns every key
+            return True           # the list overlay owns every key
         if self._mode == "help":
             ks = keystr(ev)
             if ks in ("<Esc>", "h", "?", "q"):

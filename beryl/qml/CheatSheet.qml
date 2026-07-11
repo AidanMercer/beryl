@@ -23,8 +23,9 @@ Item {
             ["p / P", "paste-go (here / tab)"]] },
         { title: "bookmarks & help", keys: [
             ["*", "bookmark this page (★)"], ["b", "open bookmarks list"],
-            ["h / ?", "this help"], [":clear", "wipe cookies+history"],
-            [":w", "save session"], ["ZZ / :qa", "close window / quit"]] },
+            ["gd", "recent downloads"], ["h / ?", "this help"],
+            [":clear", "wipe cookies+history"], [":w", "save session"],
+            ["ZZ / :qa", "close window / quit"]] },
         { title: "modes & ex", keys: [
             ["i / Esc", "insert / normal"], ["S-Esc", "passthrough (avd)"],
             ["C-A-Esc", "exit passthrough"], [":", "command line"],

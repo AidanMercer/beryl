@@ -154,12 +154,23 @@ ApplicationWindow {
         }
         onLoaded: item.start()
     }
+
+    Loader {
+        id: downloadsList
+        anchors.fill: parent
+        active: false
+        z: 11
+        sourceComponent: DownloadsList {}
+        onLoaded: item.start()
+    }
     // overlays are mode-driven: they vanish the moment we leave their mode
     Connections {
         target: Vim
         function onModeChanged() {
             if (Vim.mode !== "bookmarks" && bookmarksList.active)
                 bookmarksList.active = false
+            if (Vim.mode !== "downloads" && downloadsList.active)
+                downloadsList.active = false
             if (Vim.mode !== "help" && help.active)
                 help.active = false
         }
@@ -193,6 +204,7 @@ ApplicationWindow {
         }
         function onHelpRequested() { if (win.active) help.active = true }
         function onBookmarksRequested() { if (win.active) bookmarksList.active = true }
+        function onDownloadsRequested() { if (win.active) downloadsList.active = true }
         function onNavRequested(url) {
             if (!win.active) return
             var v = win.currentView()

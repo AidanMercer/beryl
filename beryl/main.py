@@ -157,7 +157,8 @@ def main():
     manager.set_session(session)
     registry = commands.build(api, tabs, keys, cfg,
                               profile=profile, history=history, session=session,
-                              hints=hints, bookmarks=bookmarks, wins=manager)
+                              hints=hints, bookmarks=bookmarks, wins=manager,
+                              downloads=downloads)
     keys.set_registry(registry)
     keys.set_hints(hints)
     hints.set_keys(keys)

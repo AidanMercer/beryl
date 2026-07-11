@@ -16,6 +16,7 @@ _ALIASES = {
     "tc": "tab-close",
     "w": "session-save",
     "nohl": "search-stop",
+    "dl": "downloads",
     "bm": "bookmark-add",
     "bookmark": "bookmark-add",
     "clear": "clear",
@@ -48,7 +49,7 @@ def to_url(text, cfg):
 
 
 def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
-          hints=None, bookmarks=None, wins=None):
+          hints=None, bookmarks=None, wins=None, downloads=None):
     reg = {}
     marks = {}   # per-url scroll marks: {char: (url, x, y)} — session-lived
 
@@ -242,6 +243,14 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
             return
         keys.set_mode("bookmarks")
         api.bookmarksRequested.emit()
+
+    @command("downloads")
+    def downloads_(count=1, arg=""):
+        if downloads is None or not downloads.has_any():
+            api.toast.emit("no downloads yet", False)
+            return
+        keys.set_mode("downloads")
+        api.downloadsRequested.emit()
 
     @command("help")
     def help_(count=1, arg=""):
