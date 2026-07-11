@@ -131,8 +131,12 @@ class KeyController(QObject):
         self._pressed = {}         # key code → did we consume its press?
         self._mode_reason = "manual"
         self._prompt_active = False
-        self._pt_host = None        # host we last evaluated for auto-passthrough
-        self._pt_suppressed = False  # user manually left passthrough on this host
+        # passthrough intent is per-tab, not per-host: switching tabs must not
+        # forget what you chose. _pt_override[uid] = {"host": h, "on": bool}
+        # records a manual on/off; absent = decide automatically by site.
+        self._cur_uid = -1
+        self._cur_host = ""
+        self._pt_override = {}
 
         self._seq_timer = QTimer(self)
         self._seq_timer.setSingleShot(True)
@@ -180,11 +184,14 @@ class KeyController(QObject):
         old = self._mode
         self._mode = mode
         self._mode_reason = reason
-        # a manual exit from an auto-passthrough site means "stop grabbing my
-        # keys here" — don't let the site's title updates yank us back in until
-        # we navigate somewhere else
-        if old == "passthrough" and mode == "normal" and reason == "manual":
-            self._pt_suppressed = True
+        # remember a manual passthrough choice against the current tab, so it
+        # survives tab switches and only the same tab navigating elsewhere
+        # forgets it
+        if reason == "manual" and self._cur_uid >= 0:
+            if mode == "passthrough":
+                self._pt_override[self._cur_uid] = {"host": self._cur_host, "on": True}
+            elif mode == "normal" and old == "passthrough":
+                self._pt_override[self._cur_uid] = {"host": self._cur_host, "on": False}
         self._reset_pending()
         self.modeChanged.emit()
         # leaving insert/passthrough: blur the page's editable so stray input
@@ -202,20 +209,34 @@ class KeyController(QObject):
         elif not on and self._mode == "insert" and self._mode_reason == "page":
             self.set_mode("normal")
 
-    def site_changed(self, url):
-        """Remote-desktop sites (AVD) get the whole keyboard automatically;
-        leaving one hands it back. A manual passthrough (or a manual exit) is
-        left alone until the host actually changes."""
+    def tab_context(self, uid, url):
+        """Called when the current tab or its url changes. Decides passthrough
+        from the tab's manual override if it has one (surviving tab switches),
+        otherwise automatically by site. Only an auto-entered passthrough is
+        auto-exited — a manual choice is never overridden by a title ping."""
         host = urlsplit(url).hostname or ""
-        if host != self._pt_host:
-            self._pt_host = host
-            self._pt_suppressed = False   # new host — auto-passthrough is fair game again
-        wanted = any(fnmatch(host, pat)
-                     for pat in self._cfg.get("passthrough_sites", []))
-        if wanted and not self._pt_suppressed and self._mode in ("normal", "insert"):
+        self._cur_uid = uid
+        self._cur_host = host
+
+        # a tab that navigated to a genuinely different host forgets its
+        # manual override (the choice was about the old page); a stale manual
+        # passthrough then becomes fair game to auto-manage again
+        ov = self._pt_override.get(uid)
+        dropped = ov is not None and ov["host"] != host
+        if dropped:
+            del self._pt_override[uid]
+            ov = None
+
+        if ov is not None:
+            want = ov["on"]
+        else:
+            want = any(fnmatch(host, pat)
+                       for pat in self._cfg.get("passthrough_sites", []))
+
+        if want and self._mode in ("normal", "insert"):
             self.set_mode("passthrough", reason="site")
-        elif not wanted and self._mode == "passthrough" \
-                and self._mode_reason == "site":
+        elif not want and self._mode == "passthrough" \
+                and (self._mode_reason == "site" or dropped):
             self.set_mode("normal")
 
     @Slot(bool)

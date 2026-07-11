@@ -64,6 +64,10 @@ class TabModel(QAbstractListModel):
     def count(self):
         return len(self._tabs)
 
+    @Property(int, notify=currentInfoChanged)
+    def currentUid(self):
+        return self._tabs[self._current]["uid"] if 0 <= self._current < len(self._tabs) else -1
+
     @Property(str, notify=currentInfoChanged)
     def currentUrl(self):
         return self._tabs[self._current]["url"] if 0 <= self._current < len(self._tabs) else ""

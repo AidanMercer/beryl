@@ -198,8 +198,10 @@ def main():
     session.wire()
     app.aboutToQuit.connect(session.flush)
 
-    # remote-desktop sites (AVD) auto-toggle passthrough as tabs/urls change
-    tabs.currentInfoChanged.connect(lambda: keys.site_changed(tabs.currentUrl))
+    # remote-desktop sites (AVD) auto-toggle passthrough; keyed per-tab so a
+    # manual choice survives tab switches
+    tabs.currentInfoChanged.connect(
+        lambda: keys.tab_context(tabs.currentUid, tabs.currentUrl))
 
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
     if not engine.rootObjects():
