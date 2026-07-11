@@ -9,8 +9,10 @@ from PySide6.QtGui import QGuiApplication
 
 _ALIASES = {
     "q": "quit",
+    "qa": "quit-all",
     "o": "open",
     "t": "tabopen",
+    "wo": "winopen",
     "tc": "tab-close",
     "w": "session-save",
     "nohl": "search-stop",
@@ -46,7 +48,7 @@ def to_url(text, cfg):
 
 
 def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
-          hints=None, bookmarks=None):
+          hints=None, bookmarks=None, wins=None):
     reg = {}
     marks = {}   # per-url scroll marks: {char: (url, x, y)} — session-lived
 
@@ -124,6 +126,20 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
     def tab_prev(count=1, arg=""):
         for _ in range(count):
             tabs.prevTab()
+
+    # ---- windows ---------------------------------------------------------------
+    @command("winopen")
+    def winopen(count=1, arg=""):
+        """:winopen [url/query] — a whole new window (homepage when bare)."""
+        if wins is not None:
+            wins.open_window(urls=[arg] if arg else None)
+
+    @command("detach")
+    def detach(count=1, arg=""):
+        """Move the current tab into its own window — the live view moves,
+        no reload."""
+        if wins is not None:
+            wins.detach_current()
 
     # ---- modes / cmdline -----------------------------------------------------
     @command("mode-insert")
@@ -308,6 +324,15 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
 
     @command("quit")
     def quit_(count=1, arg=""):
+        """Close this window — quits beryl when it's the only one, so ZZ in a
+        single window behaves exactly as it always did."""
+        if wins is not None:
+            wins.close_active()
+        else:
+            QGuiApplication.quit()
+
+    @command("quit-all")
+    def quit_all(count=1, arg=""):
         QGuiApplication.quit()
 
     return reg

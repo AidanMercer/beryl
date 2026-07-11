@@ -15,7 +15,8 @@ Item {
         { title: "links & tabs", keys: [
             ["f / F", "hint (this / new tab)"], ["gi", "focus first input"],
             ["o / t", "open (here / new tab)"], ["T", "switch tab"],
-            ["J / K", "prev / next tab"], ["x / X", "close / reopen tab"]] },
+            ["J / K", "prev / next tab"], ["x / X", "close / reopen tab"],
+            ["W / gw", "new window / detach tab"]] },
         { title: "page & url", keys: [
             ["r / R", "reload / hard reload"], ["gu / gU", "url up / root"],
             ["zi / zo / zz", "zoom in / out / reset"], ["yy", "yank url"],
@@ -23,7 +24,7 @@ Item {
         { title: "bookmarks & help", keys: [
             ["*", "bookmark this page (★)"], ["b", "open bookmarks list"],
             ["h / ?", "this help"], [":clear", "wipe cookies+history"],
-            [":w", "save session"], ["ZZ", "quit"]] },
+            [":w", "save session"], ["ZZ / :qa", "close window / quit"]] },
         { title: "modes & ex", keys: [
             ["i / Esc", "insert / normal"], ["S-Esc", "passthrough (avd)"],
             ["C-A-Esc", "exit passthrough"], [":", "command line"],

@@ -6,7 +6,7 @@ from PySide6.QtCore import (Property, QAbstractListModel, QModelIndex, Qt,
 # Everything here is local: command names, open tabs, history. Keystrokes in
 # the cmdline never touch the network — that's a feature, not a gap.
 
-_ARG_COMMANDS = ("open", "tabopen", "o", "t", "tab", "T")
+_ARG_COMMANDS = ("open", "tabopen", "o", "t", "tab", "T", "winopen", "wo")
 
 
 def _fuzzy(query, text):

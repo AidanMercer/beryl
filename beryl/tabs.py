@@ -1,6 +1,5 @@
 from PySide6.QtCore import (Property, QAbstractListModel, QModelIndex, Qt,
                             Signal, Slot)
-from PySide6.QtGui import QGuiApplication
 
 
 class TabModel(QAbstractListModel):
@@ -28,6 +27,7 @@ class TabModel(QAbstractListModel):
     currentIndexChanged = Signal()
     currentInfoChanged = Signal()
     countChanged = Signal()
+    lastTabClosed = Signal()
 
     def __init__(self, cfg, parent=None):
         super().__init__(parent)
@@ -97,7 +97,7 @@ class TabModel(QAbstractListModel):
         if not (0 <= i < len(self._tabs)):
             return
         if len(self._tabs) == 1:
-            QGuiApplication.quit()   # closing the last tab closes beryl, vim-style
+            self.lastTabClosed.emit()   # closing the last tab closes the window, vim-style
             return
         self._closed.append((self._tabs[i]["url"], i))
         del self._closed[:-30]
@@ -134,10 +134,29 @@ class TabModel(QAbstractListModel):
     def activate(self, i):
         if not (0 <= i < len(self._tabs)):
             return
-        if not self._tabs[i]["live"]:
-            self._tabs[i]["live"] = True   # lazy-restored row wakes up here
-            self._row_changed(i, [self.LiveRole])
+        self.wake(i)
         self._set_current(i)
+
+    def wake(self, i):
+        """Bring a lazy-restored (live=false) row to life without touching
+        the current index — the window manager wakes rows for windows that
+        aren't focused."""
+        if 0 <= i < len(self._tabs) and not self._tabs[i]["live"]:
+            self._tabs[i]["live"] = True
+            self._row_changed(i, [self.LiveRole])
+
+    # ---- lookups for the window manager --------------------------------------
+    def uid_at(self, i):
+        return self._tabs[i]["uid"] if 0 <= i < len(self._tabs) else -1
+
+    def title_at(self, i):
+        return self._tabs[i]["title"] if 0 <= i < len(self._tabs) else ""
+
+    def live_at(self, i):
+        return bool(self._tabs[i]["live"]) if 0 <= i < len(self._tabs) else False
+
+    def index_of(self, uid):
+        return next((r for r, t in enumerate(self._tabs) if t["uid"] == uid), -1)
 
     @Slot()
     def nextTab(self):

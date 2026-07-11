@@ -9,6 +9,13 @@ WebEngineView {
     required property int tabUid
     property string initialUrl: ""
 
+    // "on screen" = parented into a real window, not the hidden ViewHost
+    // vault (item visibility can't tell those apart — the vault's items are
+    // visible inside an unshown window)
+    readonly property bool shown: Window.window !== null && Window.window.visible
+
+    anchors.fill: parent   // fits the vault slot or a window's viewport alike
+
     profile: WebProfile
     backgroundColor: Theme.viewBg              // kills the white flash
 
@@ -30,7 +37,7 @@ WebEngineView {
     readonly property QtObject pageBridge: QtObject {
         WebChannel.id: "bridge"
         function editableFocused(on) {
-            if (view.visible)              // background tabs don't get a vote
+            if (view.shown)                // background tabs don't get a vote
                 Vim.pageEditable(on === true)
         }
     }
@@ -70,7 +77,7 @@ WebEngineView {
     }
 
     onFindTextFinished: function (result) {
-        if (view.visible)
+        if (view.shown)
             api.findResult(result.numberOfMatches, result.activeMatch)
     }
 
@@ -81,13 +88,17 @@ WebEngineView {
     }
 
     onFullScreenRequested: function (request) {
+        if (!view.shown) {
+            request.reject()
+            return
+        }
         request.accept()
         Window.window.visibility = request.toggleOn ? Window.FullScreen
                                                     : Window.Windowed
     }
 
     onPermissionRequested: function (permission) {
-        if (view.visible)
+        if (view.shown)
             Window.window.askPermission(permission)
         else
             permission.deny()   // background tabs don't get to nag

@@ -19,6 +19,8 @@ DEFAULT_BINDS = {
         "o": "cmdline-open :open ", "O": "cmdline-open-url",
         "t": "cmdline-open :tabopen ",
         "T": "cmdline-open :tab ",
+        "W": "cmdline-open :winopen ",
+        "gw": "detach",
         "b": "bookmarks-open",
         "h": "help",
         "f": "hint", "F": "hint-tab",

@@ -1,9 +1,12 @@
 import QtQuick
 
 // The tab strip: mica's pill row, model-driven. Click activates, middle-click
-// closes, the 2px underline is the load progress.
+// closes, the 2px underline is the load progress. The pool is shared across
+// windows, so the highlight follows what THIS window shows, not the global
+// current tab.
 Item {
     id: root
+    property int shownUid: -1
 
     Row {
         anchors.left: parent.left
@@ -16,11 +19,12 @@ Item {
 
             Rectangle {
                 required property int index
+                required property int uid
                 required property string title
                 required property string url
                 required property bool loading
                 required property int progress
-                readonly property bool active: index === Tabs.currentIndex
+                readonly property bool active: uid === root.shownUid
 
                 height: 24
                 width: Math.min(content.implicitWidth + 18, 220)

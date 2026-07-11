@@ -20,6 +20,7 @@ from .keys import KeyController, KeyFilter
 from .session import Session
 from .tabs import TabModel
 from .theme import ThemeManager
+from .windows import WindowManager
 
 _LOG_CAP = 1024 * 1024
 
@@ -93,14 +94,16 @@ def main():
 
     # single instance: a Chromium profile can't be shared, so a second launch
     # hands its urls over the local socket and exits before touching anything.
+    # --new-window asks the running instance for a fresh window instead of tabs.
     args = _url_args(sys.argv)
+    new_window = "--new-window" in sys.argv[1:]
     if importing:
         # import owns the profile too — it can't run alongside a live beryl
         if ipc.try_forward([]):
             print("[import] beryl is already running — close it first "
                   "(quit with ZZ), then re-run the import", flush=True)
             return
-    elif ipc.try_forward(args):
+    elif ipc.try_forward(args, new_window=new_window):
         print("[ipc] forwarded to running instance", flush=True)
         return
 
@@ -129,18 +132,8 @@ def main():
     api = Api(app)
     keys = KeyController(cfg, api, app)
     history = History(cfg, app)
-    session = Session(cfg, tabs, app)
     bookmarks = Bookmarks(app)
     hints = Hints(cfg, api, tabs, app)
-    registry = commands.build(api, tabs, keys, cfg,
-                              profile=profile, history=history, session=session,
-                              hints=hints, bookmarks=bookmarks)
-    keys.set_registry(registry)
-    keys.set_hints(hints)
-    hints.set_keys(keys)
-    api.set_ex_handler(lambda line: commands.run_ex(line, registry, api))
-    completion = Completion(app)
-    completion.set_sources(registry, tabs, history, bookmarks)
 
     def apply_font():
         app.setFont(QFont(theme.theme_dict()["font"]))
@@ -157,8 +150,32 @@ def main():
     ctx.setContextProperty("WebProfile", profile)
     ctx.setContextProperty("Dl", downloads)
     ctx.setContextProperty("History", history)
-    ctx.setContextProperty("Completion", completion)
     ctx.setContextProperty("Bookmarks", bookmarks)
+
+    manager = WindowManager(engine, cfg, tabs, app)
+    session = Session(cfg, manager, app)
+    manager.set_session(session)
+    registry = commands.build(api, tabs, keys, cfg,
+                              profile=profile, history=history, session=session,
+                              hints=hints, bookmarks=bookmarks, wins=manager)
+    keys.set_registry(registry)
+    keys.set_hints(hints)
+    hints.set_keys(keys)
+    api.set_ex_handler(lambda line: commands.run_ex(line, registry, api))
+    completion = Completion(app)
+    completion.set_sources(registry, tabs, history, bookmarks)
+    ctx.setContextProperty("Completion", completion)
+
+    # every key in every window passes through this filter before the focused
+    # item (the WebEngineView) sees it — the whole vim layer's entry point
+    key_filter = KeyFilter(keys, app)
+    manager.set_key_filter(key_filter)
+
+    # the vault owns every tab's live view; windows borrow them by reparenting
+    engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "ViewHost.qml")))
+    if not engine.rootObjects():
+        sys.exit(1)
+    ctx.setContextProperty("Views", engine.rootObjects()[0])
 
     def retheme():
         ctx.setContextProperty("Theme", theme.theme_dict())
@@ -189,13 +206,20 @@ def main():
     if config.CONFIG_FILE.exists():
         watcher.addPath(str(config.CONFIG_FILE))
 
-    # first tabs: last session (lazily), then argv urls, else the homepage
+    # first windows: last session (lazily, one window per saved entry), argv
+    # urls into the focused one, else one window on the homepage
     session.restore()
-    for a in args:
-        tabs.newTab(commands.to_url(a, cfg))
-    if tabs.count == 0:
-        tabs.newTab(cfg["homepage"])
-    session.wire()
+    if args and manager.handles:
+        for a in args:
+            tabs.newTab(commands.to_url(a, cfg))
+    elif args:
+        manager.open_window(urls=args)
+    if not manager.handles:
+        manager.open_window()
+    if not manager.handles:
+        sys.exit(1)
+    session.watch(tabs)
+    session.arm()
     app.aboutToQuit.connect(session.flush)
 
     # remote-desktop sites (AVD) auto-toggle passthrough; keyed per-tab so a
@@ -203,25 +227,22 @@ def main():
     tabs.currentInfoChanged.connect(
         lambda: keys.tab_context(tabs.currentUid, tabs.currentUrl))
 
-    engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Main.qml")))
-    if not engine.rootObjects():
-        sys.exit(1)
-    win = engine.rootObjects()[0]
-
-    # every key in the app passes through here before the focused item (the
-    # WebEngineView) sees it — this is the whole vim layer's entry point.
-    key_filter = KeyFilter(keys, app)
-    win.installEventFilter(key_filter)
-
-    def on_urls(urls):
+    def on_received(payload):
+        urls = payload.get("urls") or []
+        if payload.get("window"):
+            manager.open_window(urls=urls)
+            return
         for u in urls:
             tabs.newTab(commands.to_url(u, cfg))
-        win.requestActivate()
-    server.urlsReceived.connect(on_urls)
+        w = manager.active_window()
+        if w is not None and w.win is not None:
+            w.win.requestActivate()
+    server.received.connect(on_received)
 
     # permanent startup instrumentation — keep an eye on the "lightning fast"
     def on_frame():
         print(f"[startup] first frame in {time.monotonic() - t0:.3f}s", flush=True)
-    win.frameSwapped.connect(on_frame, Qt.ConnectionType.SingleShotConnection)
+    manager.handles[0].win.frameSwapped.connect(
+        on_frame, Qt.ConnectionType.SingleShotConnection)
 
     sys.exit(app.exec())
