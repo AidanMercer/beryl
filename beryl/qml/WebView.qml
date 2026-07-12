@@ -17,7 +17,9 @@ WebEngineView {
     anchors.fill: parent   // fits the vault slot or a window's viewport alike
 
     profile: WebProfile
-    backgroundColor: Theme.viewBg              // kills the white flash
+    // opaque theme bg kills the white flash; transparent mode lets the frost
+    // show through pages instead (transparent.js strips their backgrounds)
+    backgroundColor: Config.transparent_pages ? "transparent" : Theme.viewBg
 
     settings.focusOnNavigationEnabled: false   // pages don't get to grab the keyboard
     settings.dnsPrefetchEnabled: false         // no speculative traffic
@@ -41,26 +43,38 @@ WebEngineView {
                 Vim.pageEditable(on === true)
         }
     }
-    userScripts.collection: [
-        {
-            name: "qwebchannel",
-            sourceUrl: Qt.resolvedUrl("../js/qwebchannel.js"),
-            injectionPoint: WebEngineScript.DocumentCreation,
-            worldId: WebEngineScript.MainWorld
-        },
-        {
-            name: "editable",
-            sourceUrl: Qt.resolvedUrl("../js/editable.js"),
-            injectionPoint: WebEngineScript.DocumentReady,
-            worldId: WebEngineScript.MainWorld
-        },
-        {
-            name: "hints",
-            sourceUrl: Qt.resolvedUrl("../js/hints.js"),
-            injectionPoint: WebEngineScript.DocumentReady,
-            worldId: WebEngineScript.ApplicationWorld
-        }
-    ]
+    userScripts.collection: {
+        var scripts = [
+            {
+                name: "qwebchannel",
+                sourceUrl: Qt.resolvedUrl("../js/qwebchannel.js"),
+                injectionPoint: WebEngineScript.DocumentCreation,
+                worldId: WebEngineScript.MainWorld
+            },
+            {
+                name: "editable",
+                sourceUrl: Qt.resolvedUrl("../js/editable.js"),
+                injectionPoint: WebEngineScript.DocumentReady,
+                worldId: WebEngineScript.MainWorld
+            },
+            {
+                name: "hints",
+                sourceUrl: Qt.resolvedUrl("../js/hints.js"),
+                injectionPoint: WebEngineScript.DocumentReady,
+                worldId: WebEngineScript.ApplicationWorld
+            }
+        ]
+        // DocumentReady, not DocumentCreation: creation-time scripts can lose
+        // the registration race against a fresh renderer's first navigation
+        if (Config.transparent_pages)
+            scripts.push({
+                name: "transparent",
+                sourceUrl: Qt.resolvedUrl("../js/transparent.js"),
+                injectionPoint: WebEngineScript.DocumentReady,
+                worldId: WebEngineScript.MainWorld
+            })
+        return scripts
+    }
 
     // ---- state → model / history ---------------------------------------------
     onUrlChanged: Tabs.viewState(tabUid, "url", url.toString())

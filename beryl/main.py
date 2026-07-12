@@ -152,7 +152,9 @@ def main():
     ctx.setContextProperty("Dl", downloads)
     ctx.setContextProperty("History", history)
     ctx.setContextProperty("Bookmarks", bookmarks)
-    ctx.setContextProperty("Prefs", Settings(cfg, app))
+    prefs = Settings(cfg, api, app)
+    prefs.applied.connect(lambda: ctx.setContextProperty("Config", cfg))
+    ctx.setContextProperty("Prefs", prefs)
 
     manager = WindowManager(engine, cfg, tabs, app)
     session = Session(cfg, manager, app)

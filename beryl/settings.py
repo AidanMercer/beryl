@@ -16,12 +16,16 @@ ENGINES = [
 class Settings(QObject):
     """The s overlay: app settings that apply live and write back into
     config.toml (surgical single-line edits — the file stays the user's,
-    comments and all). One entry so far: the default search engine."""
+    comments and all)."""
     changed = Signal()
+    applied = Signal()   # main refreshes the QML Config property on this —
+                         # synchronously, so a follow-up reload sees the change
+                         # (the file watcher's debounced reload is too late)
 
-    def __init__(self, cfg, parent=None):
+    def __init__(self, cfg, api=None, parent=None):
         super().__init__(parent)
         self._cfg = cfg
+        self._api = api
 
     def _engine_index(self):
         cur = self._cfg.get("search", "")
@@ -30,25 +34,43 @@ class Settings(QObject):
     @Property("QVariantList", notify=changed)
     def items(self):
         i = self._engine_index()
-        return [{
-            "key": "search",
-            "label": "search engine",
-            "value": ENGINES[i][0] if i >= 0 else "custom",
-            "detail": self._cfg.get("search", ""),
-        }]
+        return [
+            {
+                "key": "search",
+                "label": "search engine",
+                "value": ENGINES[i][0] if i >= 0 else "custom",
+                "detail": self._cfg.get("search", ""),
+            },
+            {
+                "key": "transparent",
+                "label": "transparent pages",
+                "value": "on" if self._cfg.get("transparent_pages") else "off",
+                "detail": "strip page backgrounds — the frost shows through",
+            },
+        ]
 
     @Slot(str, int)
     def cycle(self, key, direction):
-        if key != "search":
-            return
-        i = self._engine_index()
-        if i < 0:
-            # a hand-edited custom url: cycling steps onto the preset ring
-            i = 0 if direction > 0 else len(ENGINES) - 1
+        if key == "search":
+            i = self._engine_index()
+            if i < 0:
+                # a hand-edited custom url: cycling steps onto the preset ring
+                i = 0 if direction > 0 else len(ENGINES) - 1
+            else:
+                i = (i + direction) % len(ENGINES)
+            self._cfg["search"] = ENGINES[i][1]   # applies immediately
+            self._persist("search", ENGINES[i][1])
+        elif key == "transparent":
+            on = not self._cfg.get("transparent_pages", False)
+            self._cfg["transparent_pages"] = on
+            self.applied.emit()
+            self._persist("transparent_pages", on)
+            # the current page shows the change right away; others follow on
+            # their next load (user scripts apply per navigation)
+            if self._api is not None:
+                self._api.reloadRequested.emit(False)
         else:
-            i = (i + direction) % len(ENGINES)
-        self._cfg["search"] = ENGINES[i][1]   # applies immediately
-        self._persist("search", ENGINES[i][1])
+            return
         self.changed.emit()
 
     def _persist(self, key, value):
@@ -60,7 +82,10 @@ class Settings(QObject):
             text = config.CONFIG_FILE.read_text()
         except OSError:
             text = ""
-        line = f'{key} = "{value}"'
+        if isinstance(value, bool):
+            line = f"{key} = {'true' if value else 'false'}"
+        else:
+            line = f'{key} = "{value}"'
         pat = re.compile(rf"^{key}\s*=.*$", re.M)
         text = pat.sub(line, text, count=1) if pat.search(text) else line + "\n" + text
         try:

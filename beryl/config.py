@@ -22,6 +22,9 @@ _DEFAULTS = {
     "history_days": 180,
     "restore_session": True,
     "tab_freeze_minutes": 5,
+    # zen-style transparency: strip page backgrounds so the frosted window
+    # shows through the site itself
+    "transparent_pages": False,
     # third-party cookies are blocked EXCEPT cookies belonging to these
     # domains — microsoft sso silently refreshes tokens through
     # login.microsoftonline.com iframes and breaks without them
@@ -55,6 +58,7 @@ adblock_update_days = 7    # refresh easylist/easyprivacy this often
 history_days = 180         # visits older than this are purged at startup
 restore_session = true     # reopen last session's tabs (lazily) on launch
 tab_freeze_minutes = 5     # freeze background tabs after this long hidden
+transparent_pages = false  # zen-style: strip page backgrounds, frost shows through
 
 # third-party cookies are blocked except cookies belonging to these domains
 # (microsoft sso needs its login iframes; add your idp here if sso loops)
