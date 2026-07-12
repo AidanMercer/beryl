@@ -163,6 +163,15 @@ ApplicationWindow {
         sourceComponent: DownloadsList {}
         onLoaded: item.start()
     }
+
+    Loader {
+        id: settingsList
+        anchors.fill: parent
+        active: false
+        z: 11
+        sourceComponent: SettingsList {}
+        onLoaded: item.start()
+    }
     // overlays are mode-driven: they vanish the moment we leave their mode
     Connections {
         target: Vim
@@ -171,6 +180,8 @@ ApplicationWindow {
                 bookmarksList.active = false
             if (Vim.mode !== "downloads" && downloadsList.active)
                 downloadsList.active = false
+            if (Vim.mode !== "settings" && settingsList.active)
+                settingsList.active = false
             if (Vim.mode !== "help" && help.active)
                 help.active = false
         }
@@ -205,6 +216,7 @@ ApplicationWindow {
         function onHelpRequested() { if (win.active) help.active = true }
         function onBookmarksRequested() { if (win.active) bookmarksList.active = true }
         function onDownloadsRequested() { if (win.active) downloadsList.active = true }
+        function onSettingsRequested() { if (win.active) settingsList.active = true }
         function onNavRequested(url) {
             if (!win.active) return
             var v = win.currentView()

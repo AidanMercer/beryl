@@ -13,6 +13,7 @@ class Api(QObject):
     helpRequested = Signal()                  # toggle the cheat sheet
     bookmarksRequested = Signal()             # open the bookmarks list overlay
     downloadsRequested = Signal()             # open the downloads list overlay
+    settingsRequested = Signal()              # open the settings overlay
     navRequested = Signal(str)                # url → current view
     histRequested = Signal(int)               # -1 back / +1 forward
     reloadRequested = Signal(bool)            # bypass cache?

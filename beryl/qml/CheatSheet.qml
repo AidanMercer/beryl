@@ -23,7 +23,7 @@ Item {
             ["p / P", "paste-go (here / tab)"]] },
         { title: "bookmarks & help", keys: [
             ["*", "bookmark this page (★)"], ["b", "open bookmarks list"],
-            ["gd", "recent downloads"], ["h / ?", "this help"],
+            ["gd", "recent downloads"], ["s", "settings"], ["h / ?", "this help"],
             [":clear", "wipe cookies+history"], [":w", "save session"],
             ["ZZ / :qa", "close window / quit"]] },
         { title: "modes & ex", keys: [

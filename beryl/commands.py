@@ -252,6 +252,11 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
         keys.set_mode("downloads")
         api.downloadsRequested.emit()
 
+    @command("settings")
+    def settings_(count=1, arg=""):
+        keys.set_mode("settings")
+        api.settingsRequested.emit()
+
     @command("help")
     def help_(count=1, arg=""):
         if keys.mode == "help":

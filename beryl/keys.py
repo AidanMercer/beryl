@@ -23,6 +23,7 @@ DEFAULT_BINDS = {
         "gw": "detach",
         "b": "bookmarks-open",
         "gd": "downloads",
+        "s": "settings",
         "h": "help",
         "f": "hint", "F": "hint-tab",
         "gi": "focus-input",
@@ -278,7 +279,7 @@ class KeyController(QObject):
             if ks and ks not in ("DEAD",) and self._hints is not None:
                 self._hints.key(ks)
             return True           # hint mode owns every key
-        if self._mode in ("bookmarks", "downloads"):
+        if self._mode in ("bookmarks", "downloads", "settings"):
             ks = keystr(ev)
             if ks == "<Esc>":
                 # handled here, not in the overlay: if the overlay never opened

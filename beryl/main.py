@@ -18,6 +18,7 @@ from .history import History
 from .hints import Hints
 from .keys import KeyController, KeyFilter
 from .session import Session
+from .settings import Settings
 from .tabs import TabModel
 from .theme import ThemeManager
 from .windows import WindowManager
@@ -151,6 +152,7 @@ def main():
     ctx.setContextProperty("Dl", downloads)
     ctx.setContextProperty("History", history)
     ctx.setContextProperty("Bookmarks", bookmarks)
+    ctx.setContextProperty("Prefs", Settings(cfg, app))
 
     manager = WindowManager(engine, cfg, tabs, app)
     session = Session(cfg, manager, app)
