@@ -26,7 +26,7 @@ Item {
                     out.push(all[i])
             rows = out
         }
-        if (sel >= rows.length) sel = Math.max(0, rows.length - 1)
+        sel = Math.max(0, Math.min(sel, rows.length - 1))   // clamp both ends
     }
 
     function start() {
@@ -50,7 +50,7 @@ Item {
             return
         }
         // arrows work even mid-filter (j/k type into the filter there)
-        if (k === "<Down>" || (k === "j" && filter === "")) { sel = Math.min(sel + 1, rows.length - 1); return }
+        if (k === "<Down>" || (k === "j" && filter === "")) { if (rows.length) sel = Math.min(sel + 1, rows.length - 1); return }
         if (k === "<Up>" || (k === "k" && filter === "")) { sel = Math.max(sel - 1, 0); return }
         if ((k === "o" || k === "t") && filter === "") {
             if (rows.length) { root.openTab(rows[sel].url); close() }
@@ -61,6 +61,7 @@ Item {
             return
         }
         if (k === "<BS>") { filter = filter.slice(0, -1); refresh(); return }
+        if (k === "<Space>") { filter += " "; refresh(); return }
         if (k.length === 1 && k >= " ") { filter += k; refresh() }
     }
 

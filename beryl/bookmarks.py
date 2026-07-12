@@ -25,7 +25,11 @@ class Bookmarks(QObject):
         except (OSError, ValueError):
             return
         if isinstance(data, list):
-            self._items = [b for b in data if isinstance(b, dict) and b.get("url")]
+            # normalize hand-edited entries: a missing title must not KeyError
+            # every items/all() call later
+            self._items = [{"url": b["url"], "title": str(b.get("title", "")),
+                            "added": b.get("added", 0)}
+                           for b in data if isinstance(b, dict) and b.get("url")]
             self._urls = {b["url"] for b in self._items}
 
     def _save(self):

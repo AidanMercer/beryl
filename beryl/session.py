@@ -39,6 +39,8 @@ class Session(QObject):
 
     @Slot()
     def save(self):
+        if not self._cfg.get("restore_session", True):
+            return   # opted out: never journal open-tab urls to disk
         snap = self._mgr.snapshot()
         if not snap["tabs"] or not snap["windows"]:
             return   # mid-quit race — never overwrite the session with nothing
@@ -61,47 +63,53 @@ class Session(QObject):
         the original v1 single-window shape."""
         if not self._cfg.get("restore_session", True):
             return False
+        # everything below runs on hostile input (hand-edited / corrupted
+        # file): any shape surprise falls back to a fresh window instead of
+        # bricking startup with the same traceback on every launch
         try:
             data = json.loads(_PATH.read_text())
-        except (OSError, ValueError):
+            v = int(data.get("v", 1))
+            if v >= 3:
+                tabs = data.get("tabs", [])
+                shown = [int(w.get("shown", 0))
+                         for w in data.get("windows", []) if isinstance(w, dict)]
+                active = int(data.get("active", 0))
+                awin = int(data.get("awin", 0))
+            elif v == 2:
+                # flatten each window's tab list into one pool, keep each
+                # window pointed at what was its active tab
+                tabs, shown, active, awin = [], [], 0, 0
+                for wi, w in enumerate(data.get("windows", [])):
+                    if not isinstance(w, dict):
+                        continue
+                    base = len(tabs)
+                    wtabs = [t for t in w.get("tabs", [])
+                             if isinstance(t, dict) and t.get("url")]
+                    if not wtabs:
+                        continue
+                    tabs.extend(wtabs)
+                    shown.append(base + max(0, min(int(w.get("active", 0)),
+                                                   len(wtabs) - 1)))
+                    if wi == 0:
+                        active = shown[-1]
+            else:
+                tabs = data.get("tabs", [])
+                shown = [int(data.get("active", 0))]
+                active = shown[0]
+                awin = 0
+            rows = [(str(t.get("url", "")), str(t.get("title", "")))
+                    for t in tabs if isinstance(t, dict) and t.get("url")]
+        except (OSError, ValueError, TypeError, AttributeError, KeyError) as e:
+            print(f"[session] unreadable session.json ({e}) — starting fresh",
+                  flush=True)
             return False
-
-        v = data.get("v", 1)
-        if v >= 3:
-            tabs = data.get("tabs", [])
-            shown = [w.get("shown", 0) for w in data.get("windows", [])]
-            active = int(data.get("active", 0))
-            awin = int(data.get("awin", 0))
-        elif v == 2:
-            # flatten each window's tab list into one pool, keep each window
-            # pointed at what was its active tab
-            tabs, shown, active, awin = [], [], 0, 0
-            for wi, w in enumerate(data.get("windows", [])):
-                if not isinstance(w, dict):
-                    continue
-                base = len(tabs)
-                wtabs = [t for t in w.get("tabs", []) if t.get("url")]
-                if not wtabs:
-                    continue
-                tabs.extend(wtabs)
-                shown.append(base + max(0, min(int(w.get("active", 0)),
-                                               len(wtabs) - 1)))
-                if wi == 0:
-                    active = shown[-1]
-        else:
-            tabs = data.get("tabs", [])
-            shown = [int(data.get("active", 0))]
-            active = shown[0]
-            awin = 0
-
-        rows = [(t.get("url", ""), t.get("title", ""))
-                for t in tabs if isinstance(t, dict) and t.get("url")]
         if not rows or not shown:
             return False
         self._mgr.restore(rows, shown, active, awin)
         return bool(self._mgr.handles)
 
     def clear(self):
+        self._timer.stop()   # a pending debounced save would resurrect the file
         try:
             _PATH.unlink(missing_ok=True)
         except OSError:

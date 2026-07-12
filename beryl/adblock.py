@@ -49,6 +49,7 @@ class Blocker(QWebEngineUrlRequestInterceptor):
         self._cfg = cfg
         self._lock = threading.Lock()
         self._engine = None
+        self._building = False
         self.blocked = 0
 
     # ---- IO thread ---------------------------------------------------------
@@ -56,6 +57,10 @@ class Blocker(QWebEngineUrlRequestInterceptor):
         info.setHttpHeader(b"DNT", b"1")
         info.setHttpHeader(b"Sec-GPC", b"1")
 
+        # checked per-request so the config toggle applies live (dict reads
+        # are GIL-atomic; worst case one request uses the old value)
+        if not self._cfg.get("adblock", True):
+            return
         rtype = info.resourceType()
         if rtype == _R.ResourceTypeMainFrame:
             return                       # never block navigation itself
@@ -76,10 +81,20 @@ class Blocker(QWebEngineUrlRequestInterceptor):
 
     # ---- daemon thread -----------------------------------------------------
     def start(self):
-        if self._cfg.get("adblock", True):
+        """Idempotent: also called on config reload, so flipping adblock on
+        after booting with it off compiles the engine then."""
+        if self._cfg.get("adblock", True) and self._engine is None \
+                and not self._building:
+            self._building = True
             threading.Thread(target=self._build, daemon=True, name="adblock").start()
 
     def _build(self):
+        try:
+            self._build_inner()
+        finally:
+            self._building = False
+
+    def _build_inner(self):
         try:
             import adblock
         except ImportError:

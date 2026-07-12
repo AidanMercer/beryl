@@ -15,6 +15,9 @@ ApplicationWindow {
     // tab of the shared pool this window is showing
     property QtObject winctl
     readonly property int shownUid: winctl ? winctl.uid : -1
+    // command routing: exactly one window is "current" (last active) — api
+    // signals land there even when beryl itself has lost compositor focus
+    readonly property bool isCurrent: winctl ? winctl.current : false
 
     title: (winctl && winctl.title !== ""
             ? winctl.title.substring(0, 200) + " — " : "") + "beryl"
@@ -23,6 +26,9 @@ ApplicationWindow {
     // closes (a WM-close tears the window down like ZZ would)
     onActiveChanged: if (active && winctl) winctl.notifyActive()
     onClosing: if (winctl) winctl.notifyClosing()
+    // a stranded cmdline would leave the global mode stuck on "command" with
+    // no reachable TextField — close it when this window stops being current
+    onIsCurrentChanged: if (!isCurrent && cmdline.active) cmdline.close()
 
     function currentView() {
         var ld = Views.get(win.shownUid)
@@ -95,6 +101,10 @@ ApplicationWindow {
 
         property Item held: null
         function refit() {
+            // page fullscreen belongs to the tab that requested it — switching
+            // tabs must bring the chrome back or the window is stuck bare
+            if (win.visibility === Window.FullScreen)
+                win.visibility = Window.Windowed
             var ld = Views.get(win.shownUid)
             var v = (ld && ld.item) ? ld.item : null
             if (held && held !== v && held.parent === viewport)
@@ -109,13 +119,22 @@ ApplicationWindow {
                     v.visible = false
                     v.visible = true
                 }
-                if (win.active)
+                if (win.active && !cmdline.active)   // never yank the cmdline's focus
                     v.forceActiveFocus()
             }
         }
         Connections {
             target: win.winctl
             function onUidChanged() { viewport.refit() }
+        }
+        // a lazily-woken row instantiates its view AFTER uid was assigned —
+        // refit again when the vault reports the item exists
+        Connections {
+            target: Views
+            function onWoke(uid) {
+                if (uid === win.shownUid)
+                    viewport.refit()
+            }
         }
         Component.onCompleted: refit()
     }
@@ -188,13 +207,14 @@ ApplicationWindow {
     }
 
     // ---- python → view dispatch -----------------------------------------------
-    // api is app-global and every window hears it; only the focused window
-    // acts, so commands always mean the tab you're looking at.
+    // api is app-global and every window hears it; only the CURRENT window
+    // (last active — tracked by the manager, not compositor focus) acts, so
+    // commands still land when beryl itself isn't the focused app.
     Connections {
         target: api
 
         function onJsRequested(script, world, rid) {
-            if (!win.active)
+            if (!win.isCurrent)
                 return
             var v = win.currentView()
             if (!v) {
@@ -207,36 +227,36 @@ ApplicationWindow {
                 v.runJavaScript(script, world)
         }
         function onZoomRequested(step) {
-            if (!win.active) return
+            if (!win.isCurrent) return
             var v = win.currentView()
             if (!v) return
             v.zoomFactor = step === 0 ? 1.0
                 : Math.max(0.3, Math.min(4.0, v.zoomFactor + step))
         }
-        function onHelpRequested() { if (win.active) help.active = true }
-        function onBookmarksRequested() { if (win.active) bookmarksList.active = true }
-        function onDownloadsRequested() { if (win.active) downloadsList.active = true }
-        function onSettingsRequested() { if (win.active) settingsList.active = true }
+        function onHelpRequested() { if (win.isCurrent) help.active = true }
+        function onBookmarksRequested() { if (win.isCurrent) bookmarksList.active = true }
+        function onDownloadsRequested() { if (win.isCurrent) downloadsList.active = true }
+        function onSettingsRequested() { if (win.isCurrent) settingsList.active = true }
         function onNavRequested(url) {
-            if (!win.active) return
+            if (!win.isCurrent) return
             var v = win.currentView()
             if (v) v.url = url
         }
         function onHistRequested(d) {
-            if (!win.active) return
+            if (!win.isCurrent) return
             var v = win.currentView()
             if (!v) return
             for (var i = 0; i < Math.abs(d); i++)
                 d < 0 ? v.goBack() : v.goForward()
         }
         function onReloadRequested(bypass) {
-            if (!win.active) return
+            if (!win.isCurrent) return
             var v = win.currentView()
             if (!v) return
             bypass ? v.reloadAndBypassCache() : v.reload()
         }
         function onFindRequested(term, backwards) {
-            if (!win.active) return
+            if (!win.isCurrent) return
             var v = win.currentView()
             if (!v) return
             if (backwards)
@@ -245,11 +265,11 @@ ApplicationWindow {
                 v.findText(term)
         }
         function onCmdlineOpenRequested(prefix, prefill) {
-            if (win.active)
+            if (win.isCurrent)
                 cmdline.open(prefix, prefill)
         }
-        function onToast(t, e) { if (win.active) win.toast(t, e) }
-        function onFindCount(c) { if (win.active) footer.findCount = c }
+        function onToast(t, e) { if (win.isCurrent) win.toast(t, e) }
+        function onFindCount(c) { if (win.isCurrent) footer.findCount = c }
     }
 
     Connections {

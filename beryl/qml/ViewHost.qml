@@ -12,6 +12,10 @@ Window {
     width: 1280
     height: 800
 
+    // a lazily-woken row instantiates its view after windows already asked
+    // for it — they listen for this and refit
+    signal woke(int uid)
+
     function get(uid) {
         for (var i = 0; i < rep.count; i++) {
             var it = rep.itemAt(i)
@@ -23,6 +27,24 @@ Window {
     function stash(item) {
         if (item)
             item.parent = pool
+    }
+
+    // live pages keep the rice's palette: theme switches and page-color
+    // changes rewrite the injected stylesheet in place, no reload needed
+    function rethemeAll() {
+        for (var i = 0; i < rep.count; i++) {
+            var it = rep.itemAt(i)
+            if (it && it.item)
+                it.item.applyTransparentTheme()
+        }
+    }
+    Connections {
+        target: Rice
+        function onThemeChanged() { vault.rethemeAll() }
+    }
+    Connections {
+        target: Prefs
+        function onApplied() { vault.rethemeAll() }
     }
 
     Item {
@@ -45,6 +67,7 @@ Window {
                     tabUid: ld.uid
                     initialUrl: ld.url
                 }
+                onLoaded: vault.woke(ld.uid)
             }
         }
     }

@@ -54,6 +54,7 @@ class Api(QObject):
 
     def find_again(self, backwards):
         if self.last_find:
+            self._find_active = True   # n after :nohl re-opens the search
             self.findRequested.emit(self.last_find, backwards)
         else:
             self.toast.emit("no search", True)

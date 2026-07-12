@@ -89,20 +89,35 @@ class Settings(QObject):
         self.changed.emit()
 
     def _persist(self, key, value):
-        """Rewrite just this key's line in config.toml; everything else —
-        comments included — stays untouched. The config watcher reloads after
-        our write, but it reloads exactly what we already set, so no self-write
-        suppression is needed."""
+        """Rewrite just this key's value in config.toml; everything else —
+        indentation and comments included, even on the edited line — stays
+        untouched. The config watcher reloads after our write, but it reloads
+        exactly what we already set, so no self-write suppression is needed."""
         try:
             text = config.CONFIG_FILE.read_text()
         except OSError:
+            if config.CONFIG_FILE.exists():
+                # unreadable but present: writing would replace the user's
+                # whole file with one line — the live cfg change still applies
+                print("[settings] config.toml unreadable — not persisting",
+                      flush=True)
+                return
             text = ""
         if isinstance(value, bool):
-            line = f"{key} = {'true' if value else 'false'}"
+            val = "true" if value else "false"
         else:
-            line = f'{key} = "{value}"'
-        pat = re.compile(rf"^{key}\s*=.*$", re.M)
-        text = pat.sub(line, text, count=1) if pat.search(text) else line + "\n" + text
+            val = f'"{value}"'
+        # tolerate indentation, preserve an inline comment on the line
+        pat = re.compile(rf"^(\s*){re.escape(key)}\s*=\s*[^#\n]*(#.*)?$", re.M)
+
+        def repl(m):
+            comment = (m.group(2) or "").rstrip()
+            return f"{m.group(1)}{key} = {val}" + (f"   {comment}" if comment else "")
+
+        if pat.search(text):
+            text = pat.sub(repl, text, count=1)
+        else:
+            text = f"{key} = {val}\n" + text
         try:
             config.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             tmp = config.CONFIG_FILE.with_suffix(".toml.tmp")

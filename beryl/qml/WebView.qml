@@ -14,6 +14,14 @@ WebEngineView {
     // visible inside an unshown window)
     readonly property bool shown: Window.window !== null && Window.window.visible
 
+    // a fullscreen view stashed into the vault (tab switch) must unwind
+    // Chromium's fullscreen state, or the page believes it's still fullscreen
+    // and its own exit event later gets rejected by the !shown branch
+    onShownChanged: {
+        if (!shown && isFullScreen)
+            fullScreenCancelled()
+    }
+
     anchors.fill: parent   // fits the vault slot or a window's viewport alike
 
     profile: WebProfile
@@ -66,17 +74,27 @@ WebEngineView {
                        : (dark ? "rgba(178,184,200,1.00)" : "rgba(92,94,110,1.00)")
         var border = auto ? rgba(Theme.border)
                           : (dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.15)")
-        var card = auto ? rgba(Theme.card)
-                        : (dark ? "rgba(18,20,28,0.55)" : "rgba(255,255,255,0.60)")
+        // text fields get a whisper of frost so they read as fields, capped
+        // low — full-strength theme cards turned search bars into slabs.
+        // buttons stay fully transparent (card-colored circles read as blobs).
+        function capped(c, cap) {
+            var k = Qt.color(c)
+            return "rgba(" + Math.round(k.r * 255) + "," + Math.round(k.g * 255) + ","
+                 + Math.round(k.b * 255) + "," + Math.min(k.a, cap).toFixed(2) + ")"
+        }
+        var field = auto ? capped(Theme.card, 0.35)
+                         : (dark ? "rgba(16,18,26,0.35)" : "rgba(255,255,255,0.40)")
         var shadow = dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.65)"
         return "html,body{background:transparent !important;}"
              + "*{background-color:transparent !important;"
              + "color:" + text + " !important;"
              + "border-color:" + border + " !important;"
-             + "text-shadow:0 1px 3px " + shadow + " !important;}"
+             + "text-shadow:0 1px 3px " + shadow + " !important;"
+             + "box-shadow:none !important;}"   // shadows draw ghost boxes on frost
              + "a,a *{color:" + rgba(Theme.accent, 1) + " !important;}"
-             + "input,textarea,select,button{background-color:" + card
+             + "input,textarea,select{background-color:" + field
              + " !important;text-shadow:none !important;}"
+             + "button{text-shadow:none !important;}"
              + "img,picture,video,canvas,svg,iframe,embed,object{text-shadow:none !important;}"
              + "::placeholder{color:" + sub + " !important;}"
              + ":root{color-scheme:" + (dark ? "dark" : "light") + " !important;}"
@@ -89,16 +107,28 @@ WebEngineView {
         // gradients are background-IMAGES, so the color rules miss them
         // (google's white "show more" fade) — strip pure-gradient backgrounds
         // (url() sprites/heroes survive), pseudo-elements via marker attrs,
-        // and keep watching: those fades are inserted dynamically.
+        // and keep watching: those fades are inserted dynamically, late
+        // stylesheets/theme flips activate new ones, and CSS-in-JS mutates
+        // nothing observable — hence the extra load-time re-sweeps.
+        // Attribute churn re-strips only the TARGET element (a full subtree
+        // sweep per class flip melted busy SPAs — and our own inline-style
+        // writes would re-trigger it). Injected at BOTH DocumentCreation and
+        // DocumentReady (creation can lose the registration race on a fresh
+        // renderer; ready is the reliable one) — the window guard keeps the
+        // second run a no-op.
         return `
 (function () {
+    if (window.__berylTransparent) return;
+    window.__berylTransparent = true;
     var css = ${JSON.stringify(transparentCss())};
     try {
         var s = new CSSStyleSheet();
         s.replaceSync(css);
         document.adoptedStyleSheets = document.adoptedStyleSheets.concat(s);
+        window.__berylSheet = s;
     } catch (e) {
         var t = document.createElement("style");
+        t.id = "__beryl_style";
         t.textContent = css;
         (document.head || document.documentElement).appendChild(t);
     }
@@ -121,30 +151,59 @@ WebEngineView {
         var els = root.querySelectorAll ? root.querySelectorAll("*") : [];
         for (var i = 0; i < els.length; i++) strip(els[i]);
     }
-    var pending = new Set(), scheduled = false;
+    var sweeps = new Set(), strips = new Set(), scheduled = false;
     function flush() {
         scheduled = false;
-        pending.forEach(sweep);
-        pending.clear();
+        sweeps.forEach(sweep);
+        strips.forEach(function (el) { if (el.isConnected) strip(el); });
+        sweeps.clear();
+        strips.clear();
     }
-    function queue(n) {
-        pending.add(n);
+    function queue(set, n) {
+        set.add(n);
         if (!scheduled) { scheduled = true; setTimeout(flush, 120); }
     }
-    sweep(document);
-    new MutationObserver(function (muts) {
-        for (var i = 0; i < muts.length; i++) {
-            var m = muts[i];
-            if (m.type === "attributes") { queue(m.target); continue; }
-            for (var j = 0; j < m.addedNodes.length; j++)
-                if (m.addedNodes[j].nodeType === 1) queue(m.addedNodes[j]);
-        }
-    }).observe(document.documentElement, {
-        childList: true, subtree: true,
-        attributes: true, attributeFilter: ["class", "style"]
-    });
-    document.documentElement.dataset.berylTransparent = "1";
+    function init() {
+        sweep(document);
+        new MutationObserver(function (muts) {
+            for (var i = 0; i < muts.length; i++) {
+                var m = muts[i];
+                if (m.type === "attributes") { queue(strips, m.target); continue; }
+                for (var j = 0; j < m.addedNodes.length; j++) {
+                    var n = m.addedNodes[j];
+                    if (n.nodeType !== 1) continue;
+                    queue(sweeps, n);
+                    if (n.tagName === "LINK" || n.tagName === "STYLE")
+                        n.addEventListener("load",
+                            function () { queue(sweeps, document); }, { once: true });
+                }
+            }
+        }).observe(document.documentElement, {
+            childList: true, subtree: true, attributes: true,
+            attributeFilter: ["class", "style",
+                              "data-theme", "data-color-mode", "data-bs-theme"]
+        });
+        // late stylesheets finish after DOMContentLoaded — sweep again once
+        // everything has painted
+        window.addEventListener("load",
+            function () { queue(sweeps, document); }, { once: true });
+        document.documentElement.dataset.berylTransparent = "1";
+    }
+    if (document.documentElement)
+        init();
+    else
+        document.addEventListener("DOMContentLoaded", init);
 })();`
+    }
+    // theme switches / page-color changes rewrite the injected sheet in place
+    // on live pages (the vault calls this on every view) — no reload needed
+    function applyTransparentTheme() {
+        if (!Config.transparent_pages)
+            return
+        var css = JSON.stringify(transparentCss())
+        runJavaScript("if(window.__berylSheet){window.__berylSheet.replaceSync(" + css + ");}"
+                      + "else{var t=document.getElementById('__beryl_style');"
+                      + "if(t)t.textContent=" + css + ";}")
     }
 
     userScripts.collection: {
@@ -168,15 +227,29 @@ WebEngineView {
                 worldId: WebEngineScript.ApplicationWorld
             }
         ]
-        // DocumentReady, not DocumentCreation: creation-time scripts can lose
-        // the registration race against a fresh renderer's first navigation
-        if (Config.transparent_pages)
+        // injected twice: DocumentCreation kills the unthemed first paint on
+        // every navigation after the first (creation-time scripts can lose the
+        // registration race on a fresh renderer), DocumentReady is the one
+        // that's guaranteed to run — the script's window guard dedupes.
+        // runs in subframes too — embedded iframes otherwise keep their own
+        // opaque backgrounds and punch white holes in the frost.
+        if (Config.transparent_pages) {
+            var src = transparentScript()
+            scripts.push({
+                name: "transparent-early",
+                sourceCode: src,
+                injectionPoint: WebEngineScript.DocumentCreation,
+                worldId: WebEngineScript.MainWorld,
+                runsOnSubFrames: true
+            })
             scripts.push({
                 name: "transparent",
-                sourceCode: transparentScript(),
+                sourceCode: src,
                 injectionPoint: WebEngineScript.DocumentReady,
-                worldId: WebEngineScript.MainWorld
+                worldId: WebEngineScript.MainWorld,
+                runsOnSubFrames: true
             })
+        }
         return scripts
     }
 

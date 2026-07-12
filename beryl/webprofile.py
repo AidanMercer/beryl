@@ -19,11 +19,12 @@ def _chrome_ua():
 
 
 def _cookie_filter(cfg):
-    allow = tuple(cfg.get("cookie_allow_3p", []))
-
     def accept(request):
         if not request.thirdParty:
             return True
+        # read cfg per call, not captured at boot: the config file promises
+        # live edits, and adding an SSO domain must work without a restart
+        allow = cfg.get("cookie_allow_3p", [])
         host = request.origin.host()
         return any(host == d or host.endswith("." + d) for d in allow)
     return accept

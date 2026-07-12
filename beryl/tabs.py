@@ -36,6 +36,9 @@ class TabModel(QAbstractListModel):
         self._closed = []        # (url, index) stack for X / undo-close
         self._next_uid = 1
         self._current = -1
+        self.in_fixup = False    # True while closeTab's neighbour fixup emits —
+                                 # the manager must not treat it as a user
+                                 # activation (no cross-window steal)
 
     # ---- model plumbing ------------------------------------------------------
     def roleNames(self):
@@ -109,10 +112,15 @@ class TabModel(QAbstractListModel):
             self._current -= 1                            # keep following the same tab
         elif self._current == i:
             self._current = min(i, len(self._tabs) - 1)   # fall onto the right neighbour
+            self.wake(self._current)   # the neighbour may be a lazy dead row
         # emit unconditionally: even when the number didn't change, the tab at
         # this index did, and the QML refocus hangs off this signal
-        self.currentIndexChanged.emit()
-        self.currentInfoChanged.emit()
+        self.in_fixup = True
+        try:
+            self.currentIndexChanged.emit()
+            self.currentInfoChanged.emit()
+        finally:
+            self.in_fixup = False
 
     @Slot()
     def undoClose(self):
@@ -157,6 +165,11 @@ class TabModel(QAbstractListModel):
 
     def index_of(self, uid):
         return next((r for r, t in enumerate(self._tabs) if t["uid"] == uid), -1)
+
+    @Slot(int, result=int)
+    def indexOfUid(self, uid):
+        """QML-callable index_of — the strip scrolls the shown tab into view."""
+        return self.index_of(uid)
 
     @Slot()
     def nextTab(self):

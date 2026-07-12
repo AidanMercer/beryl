@@ -86,9 +86,16 @@ __beryl.hints = (function () {
     }
 
     function activate(typed, newTab) {
+        // prefix match among still-visible hints, not exact label: python
+        // activates as soon as one hint remains, and a unique prefix can be
+        // shorter than the uniform label length ("s" when only "sa" is left)
         var it = null;
         for (var i = 0; i < items.length; i++)
-            if (items[i].label === typed) { it = items[i]; break; }
+            if (items[i].label.indexOf(typed) === 0
+                    && items[i].div.style.display !== "none") {
+                it = items[i];
+                break;
+            }
         clear();
         if (!it) return { miss: true };
         var el = it.el;

@@ -245,7 +245,10 @@ class KeyController(QObject):
 
     @Slot(bool)
     def setPromptActive(self, on):
-        """The permission bar is up: y/n/Esc answer it from normal mode."""
+        """A permission bar is up in the active window: y/n/Esc answer it from
+        normal mode. Only the prompt that is both visible AND in the active
+        window reports here (its `hot` state), so the flag can't stick when a
+        prompt-bearing window closes or loses focus."""
         self._prompt_active = bool(on)
 
     @Slot()
@@ -338,13 +341,14 @@ class KeyController(QObject):
             self._seq_timer.start(int(self._cfg.get("seq_timeout_ms", 800)))
             return True
 
-        # dead end: drop the pending sequence, retry this key on its own
+        # dead end: drop the pending sequence and re-match this key against
+        # clean state, so it can fire, start a new sequence ("zgg" → the g
+        # starts gg), or feed the count accumulator ("z5j" scrolls 5). The
+        # recursion is depth-bounded: second pass has no pending sequence.
         had_pending = bool(self._seq)
         self._reset_pending()
-        if had_pending and ks in binds \
-                and not any(k != ks and k.startswith(ks) for k in binds):
-            self._fire(binds[ks])
-            return True
+        if had_pending:
+            return self._press(ev)
         if len(ks) == 1:
             return True           # unbound printable — never leak typing into the page
         return False              # unbound special/modifier combo — page's problem
@@ -352,7 +356,9 @@ class KeyController(QObject):
     # ---- internals -------------------------------------------------------------
     def _fire(self, cmdline):
         try:
-            count = max(1, int(self._count)) if self._count else 1
+            # clamped: commands loop `count` times python-side, and a fat-
+            # fingered 999999999j must not freeze the UI
+            count = max(1, min(int(self._count), 9999)) if self._count else 1
         except ValueError:
             count = 1
         self._reset_pending()

@@ -2,12 +2,14 @@ import os
 import tomllib
 from pathlib import Path
 
-CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "beryl"
+# `or` not a get() default: an empty (set-but-blank) XDG var must not yield
+# relative paths in whatever directory beryl was launched from
+CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "beryl"
 LOG_FILE = CACHE_HOME / "beryl.log"
 
-DATA_HOME = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "beryl"
+DATA_HOME = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local/share") / "beryl"
 
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "beryl"
+CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "beryl"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
 
 _DEFAULTS = {
@@ -113,3 +115,17 @@ def load():
     if isinstance(data.get("binds"), dict):
         cfg["binds"] = data["binds"]
     return cfg
+
+
+def load_or_none():
+    """Live-reload variant: None on a parse error, so a half-saved edit keeps
+    the running config instead of silently resetting everything to defaults
+    until the file is fixed."""
+    try:
+        tomllib.loads(CONFIG_FILE.read_text())
+    except tomllib.TOMLDecodeError as e:
+        print(f"[config] parse error, keeping running config: {e}", flush=True)
+        return None
+    except OSError:
+        pass   # missing file is a valid state (defaults)
+    return load()

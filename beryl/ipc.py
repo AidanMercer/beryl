@@ -38,10 +38,20 @@ class InstanceServer(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        QLocalServer.removeServer(_SOCKET)   # clear a stale socket after a crash
         self._server = QLocalServer(self)
         self._server.newConnection.connect(self._accept)
-        if not self._server.listen(_SOCKET):
+        # deliberately NO removeServer here: unlinking first would let a
+        # startup-race loser destroy the winner's socket and leave two
+        # instances sharing one Chromium profile. On failure the caller
+        # re-tries forwarding, and only then force_listen() clears what must
+        # be a crash-stale socket.
+        self.ok = self._server.listen(_SOCKET)
+
+    def force_listen(self):
+        """Nobody answered the socket, so it's a stale leftover: clear it."""
+        QLocalServer.removeServer(_SOCKET)
+        self.ok = self._server.listen(_SOCKET)
+        if not self.ok:
             print(f"[ipc] listen failed: {self._server.errorString()}", flush=True)
 
     def _accept(self):

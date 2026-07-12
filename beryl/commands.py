@@ -23,6 +23,9 @@ _ALIASES = {
 }
 
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
+# "localhost:8080/x" parses as scheme "localhost" — a bare word with a port is
+# a host, not a url scheme
+_HOST_PORT = re.compile(r"^[\w.\-]+:\d+([/?#].*)?$")
 
 
 class Command:
@@ -40,8 +43,10 @@ def to_url(text, cfg):
     t = text.strip()
     if not t:
         return cfg["homepage"]
-    if _SCHEME.match(t):
+    if _SCHEME.match(t) and not _HOST_PORT.match(t):
         return t
+    if _HOST_PORT.match(t):
+        return "https://" + t
     host = t.split("/", 1)[0]
     if " " not in t and ("." in host or host.startswith("localhost")):
         return "https://" + t
@@ -296,7 +301,9 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
 
     @command("search-stop")
     def search_stop(count=1, arg=""):
-        api.findRequested.emit("", False)
+        # through api.find, not a raw emit: it resets the find-active state so
+        # WebEngine's "0/0 on clear" report doesn't stick in the statusbar
+        api.find("")
 
     @command("yank-url")
     def yank_url(count=1, arg=""):

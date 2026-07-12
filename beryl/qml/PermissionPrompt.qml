@@ -1,16 +1,21 @@
 import QtQuick
 
 // Thin bar under the tab strip: "host wants clipboard  [y] allow  [n] deny".
-// Answered with y/n/Esc from normal mode (the KeyController forwards them
-// while the bar is up) or by clicking. Grants persist via the profile
-// (StoreOnDisk); some permission types re-ask each session by design.
+// Answered with y/n from normal mode (the KeyController forwards them while
+// the bar is up) or by clicking; Esc just dismisses — deny persists to disk
+// (StoreOnDisk), so it must be a deliberate keypress, never a reflex Esc.
+// The answer path is window-local: `hot` = visible AND in the active window,
+// so a keystroke can never answer a prompt sitting in another window, and
+// the global flag can't stick when a prompt-bearing window closes.
 Rectangle {
     id: root
     property var queue: []
     readonly property var cur: queue.length > 0 ? queue[0] : null
+    readonly property bool hot: cur !== null && Window.active
 
     visible: cur !== null
-    onVisibleChanged: Vim.setPromptActive(visible)
+    onHotChanged: Vim.setPromptActive(hot)
+    Component.onDestruction: if (hot) Vim.setPromptActive(false)
 
     radius: Theme.radiusSm
     color: Theme.card
@@ -32,9 +37,24 @@ Rectangle {
         queue = queue.slice(1)
     }
 
+    function dismiss() {
+        // drop the request unanswered: the site can re-ask, nothing persists
+        if (cur !== null)
+            queue = queue.slice(1)
+    }
+
     Connections {
         target: Vim
-        function onPromptAnswer(k) { root.answer(k === "y") }
+        function onPromptAnswer(k) {
+            if (!root.hot)
+                return
+            if (k === "y")
+                root.answer(true)
+            else if (k === "n")
+                root.answer(false)
+            else
+                root.dismiss()
+        }
     }
 
     Row {

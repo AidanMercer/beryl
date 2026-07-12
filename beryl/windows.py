@@ -15,12 +15,14 @@ class WindowHandle(QObject):
 
     uidChanged = Signal()
     titleChanged = Signal()
+    currentChanged = Signal()
 
     def __init__(self, mgr):
         super().__init__(mgr)
         self._mgr = mgr
         self._uid = -1
         self._title = ""
+        self._current = False
         self.win = None    # root ApplicationWindow, set after load
         self.stack = []    # previously shown uids, newest last (steal fallback)
 
@@ -31,6 +33,18 @@ class WindowHandle(QObject):
     @Property(str, notify=titleChanged)
     def title(self):
         return self._title
+
+    @Property(bool, notify=currentChanged)
+    def current(self):
+        """Exactly one window is 'current' at any time — the last active one.
+        Api signals route here, NOT to whichever window has compositor focus:
+        commands must still land when beryl itself isn't focused."""
+        return self._current
+
+    def set_current(self, on):
+        if on != self._current:
+            self._current = on
+            self.currentChanged.emit()
 
     def set_uid(self, uid):
         if uid != self._uid:
@@ -99,6 +113,7 @@ class WindowManager(QObject):
             h.win.installEventFilter(self._filter)
         self.handles.append(h)
         self._active = h     # the compositor is about to focus it anyway
+        self._mark_current(h)
         for u in urls or []:
             self.tabs.newTab(commands.to_url(u, self.cfg))
         if h.uid < 0 and not bare:
@@ -162,10 +177,15 @@ class WindowManager(QObject):
         # active: it claims the tab, the old window falls back
         self.tabs.activate(self.tabs.index_of(uid))
 
+    def _mark_current(self, h):
+        for x in self.handles:
+            x.set_current(x is h)
+
     def window_activated(self, h):
         if h not in self.handles:
             return
         self._active = h
+        self._mark_current(h)
         # global current follows the focused window, so commands/statusbar/url
         # ops always mean the tab you're looking at
         if h.uid >= 0 and self.tabs.currentUid != h.uid:
@@ -186,6 +206,9 @@ class WindowManager(QObject):
         self.handles.remove(h)
         if self._active is h:
             self._active = self.handles[-1] if self.handles else None
+            if self._active is not None:
+                self._mark_current(self._active)
+        h.set_current(False)
         h.set_uid(-1)        # Main.qml stashes its view back into the vault
         if h.win is not None:
             h.win.close()
@@ -197,7 +220,9 @@ class WindowManager(QObject):
     # ---- the shared-pool state machine --------------------------------------
     def _sync_current(self):
         """Global current changed (activate/newTab/close fixup): the focused
-        window claims that tab; whoever was showing it falls back."""
+        window claims that tab; whoever was showing it falls back — unless the
+        change is closeTab's neighbour fixup, which must never steal a tab out
+        of another window (closing your own tab shouldn't teleport pages)."""
         if self._guard:
             return
         uid = self.tabs.currentUid
@@ -205,13 +230,34 @@ class WindowManager(QObject):
         if uid < 0 or w is None or w.uid == uid:
             return
         holder = next((h for h in self.handles if h is not w and h.uid == uid), None)
+        if holder is not None and self.tabs.in_fixup:
+            # the neighbour belongs to another window: give w its own fallback
+            # and quietly point the model at it instead
+            alt = self._fallback_uid(w)
+            if alt is None:
+                self.close_window(w)
+                return
+            i = self.tabs.index_of(alt)
+            self.tabs.wake(i)
+            self._assign(w, alt)
+            self._guard = True
+            self.tabs.activate(i)
+            self._guard = False
+            return
+        self.tabs.wake(self.tabs.index_of(uid))   # fixup rows may be dead
         self._assign(w, uid)
         if holder is not None:
             self._fall_back(holder)
 
     def _rows_removed(self, _parent, _first, _last):
         # a closed tab may have been some other window's shown tab; the active
-        # window's own fallback comes from the model's neighbour fixup instead
+        # window's own fallback comes from the model's neighbour fixup instead.
+        # Deferred: this fires mid-rowsRemoved delivery, before the QML delegate
+        # models have applied the removal — waking rows here would land the
+        # LiveRole dataChanged on stale indices and brick the fallback tab.
+        QTimer.singleShot(0, self._refit_orphans)
+
+    def _refit_orphans(self):
         for h in list(self.handles):
             if h is not self.active_window() and h.uid >= 0 \
                     and self.tabs.index_of(h.uid) < 0:

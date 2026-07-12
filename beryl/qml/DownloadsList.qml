@@ -13,6 +13,10 @@ Item {
     property string filter: ""
 
     function refresh() {
+        // remember the selected ROW (by stable key), not its index — running
+        // downloads finish and reorder the list under the selection, and x
+        // must never land on a row the user didn't target
+        var selKey = (sel >= 0 && sel < rows.length) ? rows[sel].key : ""
         var all = Dl.items
         if (filter === "") {
             rows = all
@@ -24,7 +28,10 @@ Item {
                     out.push(all[i])
             rows = out
         }
-        if (sel >= rows.length) sel = Math.max(0, rows.length - 1)
+        if (selKey !== "")
+            for (var j = 0; j < rows.length; j++)
+                if (rows[j].key === selKey) { sel = j; return }
+        sel = Math.max(0, Math.min(sel, rows.length - 1))
     }
 
     function start() {
@@ -79,7 +86,7 @@ Item {
             return
         }
         // arrows work even mid-filter (j/k type into the filter there)
-        if (k === "<Down>" || (k === "j" && filter === "")) { sel = Math.min(sel + 1, rows.length - 1); return }
+        if (k === "<Down>" || (k === "j" && filter === "")) { if (rows.length) sel = Math.min(sel + 1, rows.length - 1); return }
         if (k === "<Up>" || (k === "k" && filter === "")) { sel = Math.max(sel - 1, 0); return }
         if (k === "o" && filter === "") {
             if (rows.length && rows[sel].state !== "missing") {
@@ -96,10 +103,11 @@ Item {
             return
         }
         if (k === "x" && filter === "") {
-            if (rows.length) { Dl.remove(rows[sel].path); refresh() }
+            if (rows.length) { Dl.remove(rows[sel].key); refresh() }
             return
         }
         if (k === "<BS>") { filter = filter.slice(0, -1); refresh(); return }
+        if (k === "<Space>") { filter += " "; refresh(); return }
         if (k.length === 1 && k >= " ") { filter += k; refresh() }
     }
 

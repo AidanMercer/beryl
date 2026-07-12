@@ -152,18 +152,22 @@ class Importer(QObject):
         self._app = app
         self._dir = _find_profile()
 
-    @Slot()
     def start(self):
+        """False when there's nothing to import — the caller must exit itself:
+        quit() before the event loop runs is silently lost, so calling it here
+        used to leave `--import-zen` hanging forever."""
         if self._dir is None:
             print("[import] no zen profile found under ~/.config/zen", flush=True)
-            self._app.quit()
-            return
+            return False
         print(f"[import] from {self._dir.name}", flush=True)
         import_history(self._dir)
         import_bookmarks(self._dir)
+        return True
 
     @Slot()
     def injectCookies(self):
+        if self._dir is None:
+            return
         n = import_cookies(self._profile.cookieStore(), self._dir)
         # cookies write asynchronously; give Chromium time to flush, then quit
         QTimer.singleShot(4000 + n, self._done)

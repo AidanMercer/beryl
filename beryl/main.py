@@ -108,6 +108,18 @@ def main():
         print("[ipc] forwarded to running instance", flush=True)
         return
 
+    # claim the socket BEFORE touching the profile: two simultaneous launches
+    # both pass try_forward, but only one wins listen() — the loser forwards
+    # and exits instead of corrupting the shared Chromium profile. The import
+    # branch holds the socket too, so a normal launch mid-import forwards
+    # (urls are dropped, but the profile stays single-owner).
+    server = ipc.InstanceServer(app)
+    if not server.ok:
+        if ipc.try_forward([] if importing else args, new_window=new_window):
+            print("[ipc] lost the startup race — forwarded", flush=True)
+            return
+        server.force_listen()   # nobody home: crash-stale socket
+
     config.ensure()
     cfg = config.load()
 
@@ -118,16 +130,16 @@ def main():
     if importing:
         from . import importer
         imp = importer.Importer(profile, app)
+        if not imp.start():   # no zen profile: exit now, don't open the window
+            return
         eng = QQmlApplicationEngine()
         eng.rootContext().setContextProperty("WebProfile", profile)
         eng.rootContext().setContextProperty("importer", imp)
-        imp.start()
         eng.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "Import.qml")))
         if not eng.rootObjects():
             sys.exit(1)
         sys.exit(app.exec())
 
-    server = ipc.InstanceServer(app)
     theme = ThemeManager(app)
     tabs = TabModel(cfg, app)
     api = Api(app)
@@ -176,16 +188,19 @@ def main():
     key_filter = KeyFilter(keys, app)
     manager.set_key_filter(key_filter)
 
+    # connected BEFORE the vault loads: connection order is delivery order, so
+    # the ctx refresh must land before the vault's own themeChanged handler
+    # regenerates page CSS from the Theme property
+    def retheme():
+        ctx.setContextProperty("Theme", theme.theme_dict())
+        apply_font()
+    theme.themeChanged.connect(retheme)
+
     # the vault owns every tab's live view; windows borrow them by reparenting
     engine.load(QUrl.fromLocalFile(str(Path(__file__).parent / "qml" / "ViewHost.qml")))
     if not engine.rootObjects():
         sys.exit(1)
     ctx.setContextProperty("Views", engine.rootObjects()[0])
-
-    def retheme():
-        ctx.setContextProperty("Theme", theme.theme_dict())
-        apply_font()
-    theme.themeChanged.connect(retheme)
 
     # live config reload — watch the file (and its dir, since editors replace
     # it). cfg is mutated in place so everything holding the dict sees fresh
@@ -196,11 +211,13 @@ def main():
     debounce.setInterval(250)
 
     def reload_config():
-        fresh = config.load()
-        cfg.clear()
-        cfg.update(fresh)
-        keys.reload_binds()
-        ctx.setContextProperty("Config", cfg)
+        fresh = config.load_or_none()   # a half-saved edit keeps the old config
+        if fresh is not None:
+            cfg.clear()
+            cfg.update(fresh)
+            keys.reload_binds()
+            ctx.setContextProperty("Config", cfg)
+            blocker.start()   # no-op unless adblock was just switched on
         if config.CONFIG_FILE.exists() and str(config.CONFIG_FILE) not in watcher.files():
             watcher.addPath(str(config.CONFIG_FILE))
 

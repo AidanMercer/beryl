@@ -16,8 +16,24 @@ class History(QObject):
         super().__init__(parent)
         self._cfg = cfg
         config.DATA_HOME.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(config.DATA_HOME / "history.db")
-        self._db.executescript(
+        path = config.DATA_HOME / "history.db"
+        try:
+            self._db = self._open(path)
+        except sqlite3.DatabaseError as e:
+            # a corrupt db must not brick startup: set it aside, start fresh
+            print(f"[history] corrupt history.db ({e}) — starting a new one",
+                  flush=True)
+            try:
+                path.replace(path.with_suffix(".db.corrupt"))
+            except OSError:
+                pass
+            self._db = self._open(path)
+        QTimer.singleShot(5000, self._purge)
+
+    @staticmethod
+    def _open(path):
+        db = sqlite3.connect(path)
+        db.executescript(
             "PRAGMA journal_mode=WAL;"
             "PRAGMA synchronous=NORMAL;"
             "CREATE TABLE IF NOT EXISTS visits("
@@ -25,7 +41,7 @@ class History(QObject):
             "  title TEXT DEFAULT '', ts INTEGER NOT NULL);"
             "CREATE INDEX IF NOT EXISTS idx_visits_ts ON visits(ts);"
             "CREATE INDEX IF NOT EXISTS idx_visits_url ON visits(url);")
-        QTimer.singleShot(5000, self._purge)
+        return db
 
     @Slot(str, str)
     def record(self, url, title):
@@ -48,14 +64,18 @@ class History(QObject):
 
     def search(self, q, limit=200):
         """Grouped-by-url candidates for completion: (url, title, visits,
-        last_ts), LIKE-prefiltered; the fuzzy pass happens in completion.py."""
-        like = f"%{q}%" if q else "%"
-        rows = self._db.execute(
-            "SELECT url, MAX(title), COUNT(*), MAX(ts) FROM visits"
-            " WHERE url LIKE ? OR title LIKE ?"
-            " GROUP BY url ORDER BY MAX(ts) DESC LIMIT ?",
-            (like, like, limit)).fetchall()
-        return rows
+        last_ts). Prefiltered per whitespace token (each must appear in
+        url+title, any order) so multi-word queries still reach the fuzzy
+        pass in completion.py — one LIKE over the raw string matched nothing
+        for 'git hub'."""
+        where, params = [], []
+        for tok in (q or "").split():
+            where.append("(url || ' ' || title) LIKE ?")
+            params.append(f"%{tok}%")
+        sql = ("SELECT url, MAX(title), COUNT(*), MAX(ts) FROM visits"
+               + (" WHERE " + " AND ".join(where) if where else "")
+               + " GROUP BY url ORDER BY MAX(ts) DESC LIMIT ?")
+        return self._db.execute(sql, (*params, limit)).fetchall()
 
     def clear(self):
         self._db.execute("DELETE FROM visits")
