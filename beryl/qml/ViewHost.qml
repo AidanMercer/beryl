@@ -29,6 +29,21 @@ Window {
             item.parent = pool
     }
 
+    // workspace switches occlude windows and Chromium evicts their composited
+    // frames — on return the page area is black until a new frame arrives
+    // (static pages never send one). Blinking visibility delivers
+    // wasHidden/wasShown and forces a recomposite; windows call this when
+    // they regain activation.
+    function repaintAll() {
+        for (var i = 0; i < rep.count; i++) {
+            var it = rep.itemAt(i)
+            if (it && it.item && it.item.shown) {
+                it.item.visible = false
+                it.item.visible = true
+            }
+        }
+    }
+
     // live pages keep the rice's palette: theme switches and page-color
     // changes rewrite the injected stylesheet in place, no reload needed
     function rethemeAll() {

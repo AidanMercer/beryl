@@ -23,8 +23,15 @@ ApplicationWindow {
             ? winctl.title.substring(0, 200) + " — " : "") + "beryl"
 
     // the manager tracks focus (commands/urls target the focused window) and
-    // closes (a WM-close tears the window down like ZZ would)
-    onActiveChanged: if (active && winctl) winctl.notifyActive()
+    // closes (a WM-close tears the window down like ZZ would). Regaining
+    // activation usually means the workspace just came back — repaint every
+    // on-screen view, or pages sit black on frames Chromium evicted while the
+    // windows were occluded (deferred a tick so the surface is re-exposed
+    // before the blink lands).
+    onActiveChanged: {
+        if (active && winctl) winctl.notifyActive()
+        if (active) Qt.callLater(Views.repaintAll)
+    }
     onClosing: if (winctl) winctl.notifyClosing()
     // a stranded cmdline would leave the global mode stuck on "command" with
     // no reachable TextField — close it when this window stops being current
