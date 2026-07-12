@@ -47,6 +47,12 @@ class Settings(QObject):
                 "value": "on" if self._cfg.get("transparent_pages") else "off",
                 "detail": "strip page backgrounds — the frost shows through",
             },
+            {
+                "key": "colors",
+                "label": "page colors",
+                "value": self._cfg.get("page_colors", "auto"),
+                "detail": "palette on transparent pages — auto follows the theme",
+            },
         ]
 
     @Slot(str, int)
@@ -67,6 +73,15 @@ class Settings(QObject):
             self._persist("transparent_pages", on)
             # the current page shows the change right away; others follow on
             # their next load (user scripts apply per navigation)
+            if self._api is not None:
+                self._api.reloadRequested.emit(False)
+        elif key == "colors":
+            ring = ["auto", "dark", "light"]
+            cur = self._cfg.get("page_colors", "auto")
+            i = ring.index(cur) if cur in ring else 0
+            self._cfg["page_colors"] = ring[(i + direction) % len(ring)]
+            self.applied.emit()
+            self._persist("page_colors", self._cfg["page_colors"])
             if self._api is not None:
                 self._api.reloadRequested.emit(False)
         else:

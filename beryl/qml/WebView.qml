@@ -54,18 +54,31 @@ WebEngineView {
             return "rgba(" + Math.round(k.r * 255) + "," + Math.round(k.g * 255) + ","
                  + Math.round(k.b * 255) + "," + (a !== undefined ? a : k.a).toFixed(2) + ")"
         }
-        var dark = Qt.color(Theme.bg).hslLightness < 0.5
+        // page_colors: auto rides the rice theme; dark/light pin the palette
+        // (links keep the theme accent either way — it's tuned for the frost)
+        var mode = Config.page_colors || "auto"
+        var dark = mode === "auto" ? Qt.color(Theme.bg).hslLightness < 0.5
+                                   : mode === "dark"
+        var auto = mode === "auto"
+        var text = auto ? rgba(Theme.text, 1)
+                        : (dark ? "rgba(236,239,244,1.00)" : "rgba(26,27,34,1.00)")
+        var sub = auto ? rgba(Theme.subtext, 1)
+                       : (dark ? "rgba(178,184,200,1.00)" : "rgba(92,94,110,1.00)")
+        var border = auto ? rgba(Theme.border)
+                          : (dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.15)")
+        var card = auto ? rgba(Theme.card)
+                        : (dark ? "rgba(18,20,28,0.55)" : "rgba(255,255,255,0.60)")
         var shadow = dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.65)"
         return "html,body{background:transparent !important;}"
              + "*{background-color:transparent !important;"
-             + "color:" + rgba(Theme.text, 1) + " !important;"
-             + "border-color:" + rgba(Theme.border) + " !important;"
+             + "color:" + text + " !important;"
+             + "border-color:" + border + " !important;"
              + "text-shadow:0 1px 3px " + shadow + " !important;}"
              + "a,a *{color:" + rgba(Theme.accent, 1) + " !important;}"
-             + "input,textarea,select,button{background-color:" + rgba(Theme.card)
+             + "input,textarea,select,button{background-color:" + card
              + " !important;text-shadow:none !important;}"
              + "img,picture,video,canvas,svg,iframe,embed,object{text-shadow:none !important;}"
-             + "::placeholder{color:" + rgba(Theme.subtext, 1) + " !important;}"
+             + "::placeholder{color:" + sub + " !important;}"
              + ":root{color-scheme:" + (dark ? "dark" : "light") + " !important;}"
              + "[data-beryl-ng-b]::before{background-image:none !important;}"
              + "[data-beryl-ng-a]::after{background-image:none !important;}"

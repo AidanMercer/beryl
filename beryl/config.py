@@ -25,6 +25,9 @@ _DEFAULTS = {
     # zen-style transparency: strip page backgrounds so the frosted window
     # shows through the site itself
     "transparent_pages": False,
+    # palette forced onto transparent pages: "auto" follows the rice theme,
+    # "dark"/"light" pin it
+    "page_colors": "auto",
     # third-party cookies are blocked EXCEPT cookies belonging to these
     # domains — microsoft sso silently refreshes tokens through
     # login.microsoftonline.com iframes and breaks without them
@@ -59,6 +62,7 @@ history_days = 180         # visits older than this are purged at startup
 restore_session = true     # reopen last session's tabs (lazily) on launch
 tab_freeze_minutes = 5     # freeze background tabs after this long hidden
 transparent_pages = false  # zen-style: strip page backgrounds, frost shows through
+page_colors = "auto"       # transparent-page palette: auto (follow theme) / dark / light
 
 # third-party cookies are blocked except cookies belonging to these domains
 # (microsoft sso needs its login iframes; add your idp here if sso loops)
