@@ -67,17 +67,71 @@ WebEngineView {
              + "img,picture,video,canvas,svg,iframe,embed,object{text-shadow:none !important;}"
              + "::placeholder{color:" + rgba(Theme.subtext, 1) + " !important;}"
              + ":root{color-scheme:" + (dark ? "dark" : "light") + " !important;}"
+             + "[data-beryl-ng-b]::before{background-image:none !important;}"
+             + "[data-beryl-ng-a]::after{background-image:none !important;}"
     }
     function transparentScript() {
         // adoptedStyleSheets, not a <style> tag — strict-CSP sites block
-        // inline styles; the dataset marker is what beryl/tests can probe
-        return "(function(){var css=" + JSON.stringify(transparentCss()) + ";"
-             + "try{var s=new CSSStyleSheet();s.replaceSync(css);"
-             + "document.adoptedStyleSheets=document.adoptedStyleSheets.concat(s);}"
-             + "catch(e){var t=document.createElement('style');t.textContent=css;"
-             + "(document.head||document.documentElement).appendChild(t);}"
-             + "if(document.documentElement)"
-             + "document.documentElement.dataset.berylTransparent='1';})();"
+        // inline styles; the dataset marker is what beryl/tests can probe.
+        // gradients are background-IMAGES, so the color rules miss them
+        // (google's white "show more" fade) — strip pure-gradient backgrounds
+        // (url() sprites/heroes survive), pseudo-elements via marker attrs,
+        // and keep watching: those fades are inserted dynamically.
+        return `
+(function () {
+    var css = ${JSON.stringify(transparentCss())};
+    try {
+        var s = new CSSStyleSheet();
+        s.replaceSync(css);
+        document.adoptedStyleSheets = document.adoptedStyleSheets.concat(s);
+    } catch (e) {
+        var t = document.createElement("style");
+        t.textContent = css;
+        (document.head || document.documentElement).appendChild(t);
+    }
+    function gradOnly(bi) {
+        return bi && bi.indexOf("gradient(") >= 0 && bi.indexOf("url(") < 0;
+    }
+    function strip(el) {
+        if (gradOnly(getComputedStyle(el).backgroundImage))
+            el.style.setProperty("background-image", "none", "important");
+        if (gradOnly(getComputedStyle(el, "::before").backgroundImage))
+            el.setAttribute("data-beryl-ng-b", "");
+        if (gradOnly(getComputedStyle(el, "::after").backgroundImage))
+            el.setAttribute("data-beryl-ng-a", "");
+    }
+    function sweep(root) {
+        if (root.nodeType === 1) {
+            if (!root.isConnected) return;
+            strip(root);
+        }
+        var els = root.querySelectorAll ? root.querySelectorAll("*") : [];
+        for (var i = 0; i < els.length; i++) strip(els[i]);
+    }
+    var pending = new Set(), scheduled = false;
+    function flush() {
+        scheduled = false;
+        pending.forEach(sweep);
+        pending.clear();
+    }
+    function queue(n) {
+        pending.add(n);
+        if (!scheduled) { scheduled = true; setTimeout(flush, 120); }
+    }
+    sweep(document);
+    new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+            var m = muts[i];
+            if (m.type === "attributes") { queue(m.target); continue; }
+            for (var j = 0; j < m.addedNodes.length; j++)
+                if (m.addedNodes[j].nodeType === 1) queue(m.addedNodes[j]);
+        }
+    }).observe(document.documentElement, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ["class", "style"]
+    });
+    document.documentElement.dataset.berylTransparent = "1";
+})();`
     }
 
     userScripts.collection: {
