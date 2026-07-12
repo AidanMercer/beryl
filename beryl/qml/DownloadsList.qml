@@ -2,7 +2,7 @@ import QtQuick
 
 // Recent downloads — opened with gd. Same modal shape as BookmarksList: the
 // KeyController is in "downloads" mode and forwards every key via Vim.listKey.
-//   j / k   move      Enter / o   open the file
+//   j / k / arrows   move      Enter / o   open the file
 //   f       open its folder       y   yank path
 //   x       cancel / drop entry   type to filter · Esc close
 Item {
@@ -78,8 +78,9 @@ Item {
             }
             return
         }
-        if (k === "j" && filter === "") { sel = Math.min(sel + 1, rows.length - 1); return }
-        if (k === "k" && filter === "") { sel = Math.max(sel - 1, 0); return }
+        // arrows work even mid-filter (j/k type into the filter there)
+        if (k === "<Down>" || (k === "j" && filter === "")) { sel = Math.min(sel + 1, rows.length - 1); return }
+        if (k === "<Up>" || (k === "k" && filter === "")) { sel = Math.max(sel - 1, 0); return }
         if (k === "o" && filter === "") {
             if (rows.length && rows[sel].state !== "missing") {
                 Dl.openPath(rows[sel].path); close()

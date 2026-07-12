@@ -2,9 +2,9 @@ import QtQuick
 
 // The bookmarks list — opened with b. Its own little modal: the KeyController
 // is in "bookmarks" mode and forwards every key here via Vim.listKey.
-//   j / k   move      Enter   open here
-//   o / t   open in a new tab  x / dd   remove
-//   / type  filter    Esc     close
+//   j / k / arrows   move      Enter   open here
+//   o / t   open in a new tab  x       remove
+//   type    filter             Esc     close
 Item {
     id: root
     signal openHere(string url)
@@ -49,8 +49,9 @@ Item {
             if (rows.length) { root.openHere(rows[sel].url); close() }
             return
         }
-        if (k === "j" && filter === "") { sel = Math.min(sel + 1, rows.length - 1); return }
-        if (k === "k" && filter === "") { sel = Math.max(sel - 1, 0); return }
+        // arrows work even mid-filter (j/k type into the filter there)
+        if (k === "<Down>" || (k === "j" && filter === "")) { sel = Math.min(sel + 1, rows.length - 1); return }
+        if (k === "<Up>" || (k === "k" && filter === "")) { sel = Math.max(sel - 1, 0); return }
         if ((k === "o" || k === "t") && filter === "") {
             if (rows.length) { root.openTab(rows[sel].url); close() }
             return
