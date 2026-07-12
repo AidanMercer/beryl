@@ -43,6 +43,43 @@ WebEngineView {
                 Vim.pageEditable(on === true)
         }
     }
+    // transparent mode strips page backgrounds AND repaints their text in the
+    // rice's palette — without the repaint, a site's white-background colors
+    // (near-black text, dark links) sit invisible on a dark frost. Only
+    // background-color is cleared, so sprites/hero images survive; hint labels
+    // live in a closed shadow root the * selector can't reach.
+    function transparentCss() {
+        function rgba(c, a) {
+            var k = Qt.color(c)
+            return "rgba(" + Math.round(k.r * 255) + "," + Math.round(k.g * 255) + ","
+                 + Math.round(k.b * 255) + "," + (a !== undefined ? a : k.a).toFixed(2) + ")"
+        }
+        var dark = Qt.color(Theme.bg).hslLightness < 0.5
+        var shadow = dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.65)"
+        return "html,body{background:transparent !important;}"
+             + "*{background-color:transparent !important;"
+             + "color:" + rgba(Theme.text, 1) + " !important;"
+             + "border-color:" + rgba(Theme.border) + " !important;"
+             + "text-shadow:0 1px 3px " + shadow + " !important;}"
+             + "a,a *{color:" + rgba(Theme.accent, 1) + " !important;}"
+             + "input,textarea,select,button{background-color:" + rgba(Theme.card)
+             + " !important;text-shadow:none !important;}"
+             + "img,picture,video,canvas,svg,iframe,embed,object{text-shadow:none !important;}"
+             + "::placeholder{color:" + rgba(Theme.subtext, 1) + " !important;}"
+             + ":root{color-scheme:" + (dark ? "dark" : "light") + " !important;}"
+    }
+    function transparentScript() {
+        // adoptedStyleSheets, not a <style> tag — strict-CSP sites block
+        // inline styles; the dataset marker is what beryl/tests can probe
+        return "(function(){var css=" + JSON.stringify(transparentCss()) + ";"
+             + "try{var s=new CSSStyleSheet();s.replaceSync(css);"
+             + "document.adoptedStyleSheets=document.adoptedStyleSheets.concat(s);}"
+             + "catch(e){var t=document.createElement('style');t.textContent=css;"
+             + "(document.head||document.documentElement).appendChild(t);}"
+             + "if(document.documentElement)"
+             + "document.documentElement.dataset.berylTransparent='1';})();"
+    }
+
     userScripts.collection: {
         var scripts = [
             {
@@ -69,7 +106,7 @@ WebEngineView {
         if (Config.transparent_pages)
             scripts.push({
                 name: "transparent",
-                sourceUrl: Qt.resolvedUrl("../js/transparent.js"),
+                sourceCode: transparentScript(),
                 injectionPoint: WebEngineScript.DocumentReady,
                 worldId: WebEngineScript.MainWorld
             })
