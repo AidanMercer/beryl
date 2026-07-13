@@ -255,6 +255,37 @@ WebEngineView {
                       + "if(t)t.textContent=" + css + ";}")
     }
 
+    // Client-side half of the google sign-in fix. The interceptor already
+    // sends a Firefox User-Agent HEADER to firefox_ua_hosts, but google's
+    // "this browser may not be secure" gate ALSO checks the page's JS identity
+    // — and navigator.userAgentData / window.chrome exist only on Chromium, so
+    // they expose QtWebEngine no matter what the UA string says. Override the
+    // navigator to a consistent Firefox before google's scripts run (main
+    // world, DocumentCreation). Scoped to firefox_ua_hosts at runtime — every
+    // other site sees the real Chromium navigator untouched.
+    // The UA string MUST match adblock.py's _FIREFOX_UA (header + JS agree).
+    function uaSpoofScript() {
+        var hosts = JSON.stringify(Config.firefox_ua_hosts || [])
+        var ua = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"
+        return `
+(function(){
+  try{
+    var HOSTS = ${hosts}, h = location.hostname;
+    if(!HOSTS.some(function(d){return h===d||h.endsWith("."+d);})) return;
+    function def(o,p,v){ try{ Object.defineProperty(o,p,{get:function(){return v;},configurable:true}); }catch(e){} }
+    def(navigator,'userAgent',${JSON.stringify(ua)});
+    def(navigator,'appVersion','5.0 (X11)');
+    def(navigator,'vendor','');
+    def(navigator,'productSub','20100101');
+    def(navigator,'oscpu','Linux x86_64');
+    def(navigator,'buildID','20181001000000');
+    def(navigator,'userAgentData',undefined);   // chromium-only — its presence outs the engine
+    try{ delete window.chrome; }catch(e){}
+    def(window,'chrome',undefined);              // chromium-only
+  }catch(e){}
+})();`
+    }
+
     userScripts.collection: {
         var scripts = [
             {
@@ -276,6 +307,19 @@ WebEngineView {
                 worldId: WebEngineScript.ApplicationWorld
             }
         ]
+        // google sign-in spoof: make the JS navigator agree with the Firefox
+        // UA header (see uaSpoofScript). DocumentCreation + main world so it
+        // lands before the page's own scripts read navigator; subframes too
+        // (the oauth gate can run in an iframe). Only when a host is listed.
+        if ((Config.firefox_ua_hosts || []).length > 0) {
+            scripts.push({
+                name: "uaspoof",
+                sourceCode: uaSpoofScript(),
+                injectionPoint: WebEngineScript.DocumentCreation,
+                worldId: WebEngineScript.MainWorld,
+                runsOnSubFrames: true
+            })
+        }
         // password autofill/capture: main world (needs the webchannel and the
         // fills must read as real input to the page); only when enabled
         if (Config.passwords) {
