@@ -26,6 +26,7 @@ Item {
             ["gd", "recent downloads"], ["gp", "saved passwords"],
             ["s", "settings"], ["h / ?", "this help"],
             [":clear", "wipe cookies+history"], [":w", "save session"],
+            [":google-signin", "sign in to google"],
             ["ZZ / :qa", "close window / quit"]] },
         { title: "modes & ex", keys: [
             ["i / Esc", "insert / normal"], ["S-Esc", "passthrough (avd)"],

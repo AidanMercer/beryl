@@ -32,13 +32,16 @@ from . import importer
 # non-DBSC browsers from the protected apps.
 
 # real Gecko browsers, in preference order (vanilla firefox has the most
-# predictable flags; zen is the user's daily driver and a firefox fork)
-_GECKO = ["firefox", "firefox-esr", "librewolf", "waterfox", "zen", "zen-browser"]
+# predictable flags; any firefox fork works — they all pass Google's gate and
+# store cookies in the same plaintext cookies.sqlite we read back)
+_GECKO = ["firefox", "firefox-esr", "librewolf", "waterfox", "icecat",
+          "zen", "zen-browser"]
 
 # firefox-family profile roots to scan for an already-logged-in Google session
 _PROFILE_ROOTS = [
     Path.home() / ".config" / "zen",
     Path.home() / ".mozilla" / "firefox",
+    Path.home() / ".mozilla" / "icecat",
     Path.home() / ".librewolf",
     Path.home() / ".waterfox",
 ]
@@ -134,8 +137,9 @@ class GoogleSignIn(QObject):
     def _launch(self, domains):
         browser = _find_browser()
         if browser is None:
-            self._toast("no firefox/zen found to sign in with — install one "
-                        "(e.g. sudo pacman -S firefox), then :google-signin", True)
+            self._toast("no firefox-family browser found — install firefox "
+                        "(or librewolf/waterfox/zen) to sign in, then "
+                        ":google-signin", True)
             return
         # a re-run supersedes any prior helper — kill it and its temp profile
         # so the fresh launch gets a clean, unlocked profile dir
