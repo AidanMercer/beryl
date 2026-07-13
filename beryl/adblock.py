@@ -20,22 +20,13 @@ _LISTS = {
 
 _DIR = config.CACHE_HOME / "adblock"
 
-# beryl already sends a clean Chrome User-Agent string (webprofile._chrome_ua),
-# but QtWebEngine's User-Agent Client Hints still brand it as bare "Chromium",
-# not "Google Chrome" — a Chrome UA paired with Chromium hints is the mismatch
-# Google's sign-in gate flags ("this browser may not be secure"). Since the
-# engine genuinely IS Chrome's (Blink + BoringSSL, matching Chrome's TLS
-# fingerprint), presenting a complete, consistent Google Chrome identity is
-# honest at the network level in a way a Firefox costume never could be.
-# _CHROME_MAJOR is filled in lazily from the real Chromium version.
-_CH_UA = None          # Sec-CH-UA header value, e.g. '"Chromium";v="140", ...'
-
-
-def _chrome_brands(major):
-    # the low-entropy Sec-CH-UA the way real Chrome sends it (GREASE brand +
-    # Chromium + Google Chrome, all at the same major)
-    return (f'"Chromium";v="{major}", "Google Chrome";v="{major}", '
-            f'"Not=A?Brand";v="99"')
+# NOTE: no User-Agent / Sec-CH-UA / navigator spoofing lives here anymore.
+# Google's account sign-in runs BotGuard, which is built to block embedded
+# engines (QtWebEngine) AND to detect exactly the kind of navigator tampering
+# a spoof needs — so faking the identity made detection MORE certain, not less.
+# beryl presents its honest Chrome UA string (webprofile._chrome_ua) and
+# nothing more; for Google-federated logins, sign in via a trusted browser and
+# import the cookies (`beryl --import-zen`). See beryl-browser memory.
 
 _R = QWebEngineUrlRequestInfo.ResourceType
 _RTYPE = {
@@ -73,16 +64,6 @@ class Blocker(QWebEngineUrlRequestInterceptor):
     def interceptRequest(self, info):
         info.setHttpHeader(b"DNT", b"1")
         info.setHttpHeader(b"Sec-GPC", b"1")
-
-        # brand the client hints as Google Chrome to match our Chrome UA (only
-        # sent on secure requests anyway); pairs with the navigator.userAgentData
-        # spoof in WebView.qml so header and JS agree
-        global _CH_UA
-        if _CH_UA is None:
-            from .webprofile import _chrome_ua
-            major = _chrome_ua().split("Chrome/")[1].split(".")[0]
-            _CH_UA = _chrome_brands(major)
-        info.setHttpHeader(b"Sec-CH-UA", _CH_UA.encode())
 
         # checked per-request so the config toggle applies live (dict reads
         # are GIL-atomic; worst case one request uses the old value)

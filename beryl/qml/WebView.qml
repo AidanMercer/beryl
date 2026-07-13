@@ -255,38 +255,6 @@ WebEngineView {
                       + "if(t)t.textContent=" + css + ";}")
     }
 
-    // Client-side half of the google-sign-in fix. beryl already sends a Chrome
-    // User-Agent, but navigator.userAgentData still brands the engine as bare
-    // "Chromium" — google's gate wants a recognised browser. Complete the
-    // Chrome identity so the JS navigator agrees with the Chrome UA + the
-    // Sec-CH-UA header (adblock.py): brands report "Google Chrome", and
-    // getHighEntropyValues answers like Chrome. Everything else about the
-    // navigator is left real — the engine genuinely IS Chrome's. Main world,
-    // DocumentCreation, before the page's own scripts read it.
-    function chromeBrandScript() {
-        return `
-(function(){
-  try{
-    // major straight from the real UA so it never drifts from the engine
-    var M=(navigator.userAgent.match(/Chrome\\/(\\d+)/)||[])[1]||"140";
-    var brands=[{brand:"Chromium",version:M},{brand:"Google Chrome",version:M},{brand:"Not=A?Brand",version:"99"}];
-    var full=[{brand:"Chromium",version:M+".0.0.0"},{brand:"Google Chrome",version:M+".0.0.0"},{brand:"Not=A?Brand",version:"99.0.0.0"}];
-    var d=(navigator.userAgentData)||{};
-    var uaData={
-      brands:brands, mobile:false, platform:d.platform||"Linux",
-      getHighEntropyValues:function(hints){
-        return Promise.resolve({
-          brands:brands, mobile:false, platform:d.platform||"Linux",
-          platformVersion:"6.0.0", architecture:"x86", bitness:"64",
-          model:"", uaFullVersion:M+".0.0.0", fullVersionList:full, wow64:false});
-      },
-      toJSON:function(){ return {brands:brands, mobile:false, platform:d.platform||"Linux"}; }
-    };
-    Object.defineProperty(navigator,'userAgentData',{get:function(){return uaData;},configurable:true});
-  }catch(e){}
-})();`
-    }
-
     userScripts.collection: {
         var scripts = [
             {
@@ -308,17 +276,6 @@ WebEngineView {
                 worldId: WebEngineScript.ApplicationWorld
             }
         ]
-        // complete the Chrome identity so navigator.userAgentData brands as
-        // "Google Chrome" (matches the Chrome UA + the Sec-CH-UA header).
-        // DocumentCreation + main world so it lands before the page reads it;
-        // subframes too (the oauth gate can run in an iframe).
-        scripts.push({
-            name: "chromebrand",
-            sourceCode: chromeBrandScript(),
-            injectionPoint: WebEngineScript.DocumentCreation,
-            worldId: WebEngineScript.MainWorld,
-            runsOnSubFrames: true
-        })
         // password autofill/capture: main world (needs the webchannel and the
         // fills must read as real input to the page); only when enabled
         if (Config.passwords) {
