@@ -44,6 +44,11 @@ _DEFAULTS = {
         # allow www.google.com). endswith covers accounts./www.google.com.
         "google.com",
     ],
+    # hosts that get a Firefox UA instead of the Chrome masquerade: google's
+    # oauth "this browser may not be secure" gate blocks chromium-embedded
+    # engines but allows firefox. Sign-in only — the rest of google keeps the
+    # Chrome UA. Add a host here if its sign-in claims the browser's insecure.
+    "firefox_ua_hosts": ["accounts.google.com"],
     # sites that get the whole keyboard automatically (remote desktops etc);
     # fnmatch patterns against the host. S-Esc still toggles manually.
     "passthrough_sites": [

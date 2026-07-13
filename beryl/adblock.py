@@ -20,6 +20,26 @@ _LISTS = {
 
 _DIR = config.CACHE_HOME / "adblock"
 
+# Google's OAuth "secure browser" gate blocks Chromium-embedded engines
+# (QtWebEngine) even behind our Chrome UA, but lets Firefox through — Firefox
+# doesn't send Sec-CH-UA client hints, so there's no UA-vs-hints mismatch for
+# Google to catch. We present Firefox to the google sign-in hosts ONLY (the
+# Chrome UA stays everywhere else, which the microsoft/AVD stack depends on).
+# Same workaround qutebrowser ships. Applied per-request in the interceptor.
+_FIREFOX_UA = ("Mozilla/5.0 (X11; Linux x86_64; rv:140.0) "
+               "Gecko/20100101 Firefox/140.0")
+# the low-entropy client hints Chromium sends by default — blanked for the
+# Firefox-UA hosts so the headers don't contradict the spoofed UA
+_CH_HEADERS = (b"Sec-CH-UA", b"Sec-CH-UA-Mobile", b"Sec-CH-UA-Platform",
+               b"Sec-CH-UA-Full-Version", b"Sec-CH-UA-Full-Version-List",
+               b"Sec-CH-UA-Platform-Version", b"Sec-CH-UA-Arch",
+               b"Sec-CH-UA-Model", b"Sec-CH-UA-Bitness")
+
+
+def _firefox_ua_host(host, cfg):
+    hosts = cfg.get("firefox_ua_hosts", [])
+    return any(host == d or host.endswith("." + d) for d in hosts)
+
 _R = QWebEngineUrlRequestInfo.ResourceType
 _RTYPE = {
     _R.ResourceTypeMainFrame: "document",
@@ -56,6 +76,13 @@ class Blocker(QWebEngineUrlRequestInterceptor):
     def interceptRequest(self, info):
         info.setHttpHeader(b"DNT", b"1")
         info.setHttpHeader(b"Sec-GPC", b"1")
+
+        # present Firefox to google's sign-in gate (see _FIREFOX_UA); blank the
+        # Chromium client hints so they don't give the game away
+        if _firefox_ua_host(info.requestUrl().host(), self._cfg):
+            info.setHttpHeader(b"User-Agent", _FIREFOX_UA)
+            for h in _CH_HEADERS:
+                info.setHttpHeader(h, b"")
 
         # checked per-request so the config toggle applies live (dict reads
         # are GIL-atomic; worst case one request uses the old value)
