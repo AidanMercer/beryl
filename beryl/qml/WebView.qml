@@ -255,33 +255,34 @@ WebEngineView {
                       + "if(t)t.textContent=" + css + ";}")
     }
 
-    // Client-side half of the google sign-in fix. The interceptor already
-    // sends a Firefox User-Agent HEADER to firefox_ua_hosts, but google's
-    // "this browser may not be secure" gate ALSO checks the page's JS identity
-    // — and navigator.userAgentData / window.chrome exist only on Chromium, so
-    // they expose QtWebEngine no matter what the UA string says. Override the
-    // navigator to a consistent Firefox before google's scripts run (main
-    // world, DocumentCreation). Scoped to firefox_ua_hosts at runtime — every
-    // other site sees the real Chromium navigator untouched.
-    // The UA string MUST match adblock.py's _FIREFOX_UA (header + JS agree).
-    function uaSpoofScript() {
-        var hosts = JSON.stringify(Config.firefox_ua_hosts || [])
-        var ua = "Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0"
+    // Client-side half of the google-sign-in fix. beryl already sends a Chrome
+    // User-Agent, but navigator.userAgentData still brands the engine as bare
+    // "Chromium" — google's gate wants a recognised browser. Complete the
+    // Chrome identity so the JS navigator agrees with the Chrome UA + the
+    // Sec-CH-UA header (adblock.py): brands report "Google Chrome", and
+    // getHighEntropyValues answers like Chrome. Everything else about the
+    // navigator is left real — the engine genuinely IS Chrome's. Main world,
+    // DocumentCreation, before the page's own scripts read it.
+    function chromeBrandScript() {
         return `
 (function(){
   try{
-    var HOSTS = ${hosts}, h = location.hostname;
-    if(!HOSTS.some(function(d){return h===d||h.endsWith("."+d);})) return;
-    function def(o,p,v){ try{ Object.defineProperty(o,p,{get:function(){return v;},configurable:true}); }catch(e){} }
-    def(navigator,'userAgent',${JSON.stringify(ua)});
-    def(navigator,'appVersion','5.0 (X11)');
-    def(navigator,'vendor','');
-    def(navigator,'productSub','20100101');
-    def(navigator,'oscpu','Linux x86_64');
-    def(navigator,'buildID','20181001000000');
-    def(navigator,'userAgentData',undefined);   // chromium-only — its presence outs the engine
-    try{ delete window.chrome; }catch(e){}
-    def(window,'chrome',undefined);              // chromium-only
+    // major straight from the real UA so it never drifts from the engine
+    var M=(navigator.userAgent.match(/Chrome\\/(\\d+)/)||[])[1]||"140";
+    var brands=[{brand:"Chromium",version:M},{brand:"Google Chrome",version:M},{brand:"Not=A?Brand",version:"99"}];
+    var full=[{brand:"Chromium",version:M+".0.0.0"},{brand:"Google Chrome",version:M+".0.0.0"},{brand:"Not=A?Brand",version:"99.0.0.0"}];
+    var d=(navigator.userAgentData)||{};
+    var uaData={
+      brands:brands, mobile:false, platform:d.platform||"Linux",
+      getHighEntropyValues:function(hints){
+        return Promise.resolve({
+          brands:brands, mobile:false, platform:d.platform||"Linux",
+          platformVersion:"6.0.0", architecture:"x86", bitness:"64",
+          model:"", uaFullVersion:M+".0.0.0", fullVersionList:full, wow64:false});
+      },
+      toJSON:function(){ return {brands:brands, mobile:false, platform:d.platform||"Linux"}; }
+    };
+    Object.defineProperty(navigator,'userAgentData',{get:function(){return uaData;},configurable:true});
   }catch(e){}
 })();`
     }
@@ -307,19 +308,17 @@ WebEngineView {
                 worldId: WebEngineScript.ApplicationWorld
             }
         ]
-        // google sign-in spoof: make the JS navigator agree with the Firefox
-        // UA header (see uaSpoofScript). DocumentCreation + main world so it
-        // lands before the page's own scripts read navigator; subframes too
-        // (the oauth gate can run in an iframe). Only when a host is listed.
-        if ((Config.firefox_ua_hosts || []).length > 0) {
-            scripts.push({
-                name: "uaspoof",
-                sourceCode: uaSpoofScript(),
-                injectionPoint: WebEngineScript.DocumentCreation,
-                worldId: WebEngineScript.MainWorld,
-                runsOnSubFrames: true
-            })
-        }
+        // complete the Chrome identity so navigator.userAgentData brands as
+        // "Google Chrome" (matches the Chrome UA + the Sec-CH-UA header).
+        // DocumentCreation + main world so it lands before the page reads it;
+        // subframes too (the oauth gate can run in an iframe).
+        scripts.push({
+            name: "chromebrand",
+            sourceCode: chromeBrandScript(),
+            injectionPoint: WebEngineScript.DocumentCreation,
+            worldId: WebEngineScript.MainWorld,
+            runsOnSubFrames: true
+        })
         // password autofill/capture: main world (needs the webchannel and the
         // fills must read as real input to the page); only when enabled
         if (Config.passwords) {

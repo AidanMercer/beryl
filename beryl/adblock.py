@@ -20,25 +20,22 @@ _LISTS = {
 
 _DIR = config.CACHE_HOME / "adblock"
 
-# Google's OAuth "secure browser" gate blocks Chromium-embedded engines
-# (QtWebEngine) even behind our Chrome UA, but lets Firefox through — Firefox
-# doesn't send Sec-CH-UA client hints, so there's no UA-vs-hints mismatch for
-# Google to catch. We present Firefox to the google sign-in hosts ONLY (the
-# Chrome UA stays everywhere else, which the microsoft/AVD stack depends on).
-# Same workaround qutebrowser ships. Applied per-request in the interceptor.
-_FIREFOX_UA = ("Mozilla/5.0 (X11; Linux x86_64; rv:140.0) "
-               "Gecko/20100101 Firefox/140.0")
-# the low-entropy client hints Chromium sends by default — blanked for the
-# Firefox-UA hosts so the headers don't contradict the spoofed UA
-_CH_HEADERS = (b"Sec-CH-UA", b"Sec-CH-UA-Mobile", b"Sec-CH-UA-Platform",
-               b"Sec-CH-UA-Full-Version", b"Sec-CH-UA-Full-Version-List",
-               b"Sec-CH-UA-Platform-Version", b"Sec-CH-UA-Arch",
-               b"Sec-CH-UA-Model", b"Sec-CH-UA-Bitness")
+# beryl already sends a clean Chrome User-Agent string (webprofile._chrome_ua),
+# but QtWebEngine's User-Agent Client Hints still brand it as bare "Chromium",
+# not "Google Chrome" — a Chrome UA paired with Chromium hints is the mismatch
+# Google's sign-in gate flags ("this browser may not be secure"). Since the
+# engine genuinely IS Chrome's (Blink + BoringSSL, matching Chrome's TLS
+# fingerprint), presenting a complete, consistent Google Chrome identity is
+# honest at the network level in a way a Firefox costume never could be.
+# _CHROME_MAJOR is filled in lazily from the real Chromium version.
+_CH_UA = None          # Sec-CH-UA header value, e.g. '"Chromium";v="140", ...'
 
 
-def _firefox_ua_host(host, cfg):
-    hosts = cfg.get("firefox_ua_hosts", [])
-    return any(host == d or host.endswith("." + d) for d in hosts)
+def _chrome_brands(major):
+    # the low-entropy Sec-CH-UA the way real Chrome sends it (GREASE brand +
+    # Chromium + Google Chrome, all at the same major)
+    return (f'"Chromium";v="{major}", "Google Chrome";v="{major}", '
+            f'"Not=A?Brand";v="99"')
 
 _R = QWebEngineUrlRequestInfo.ResourceType
 _RTYPE = {
@@ -77,12 +74,15 @@ class Blocker(QWebEngineUrlRequestInterceptor):
         info.setHttpHeader(b"DNT", b"1")
         info.setHttpHeader(b"Sec-GPC", b"1")
 
-        # present Firefox to google's sign-in gate (see _FIREFOX_UA); blank the
-        # Chromium client hints so they don't give the game away
-        if _firefox_ua_host(info.requestUrl().host(), self._cfg):
-            info.setHttpHeader(b"User-Agent", _FIREFOX_UA)
-            for h in _CH_HEADERS:
-                info.setHttpHeader(h, b"")
+        # brand the client hints as Google Chrome to match our Chrome UA (only
+        # sent on secure requests anyway); pairs with the navigator.userAgentData
+        # spoof in WebView.qml so header and JS agree
+        global _CH_UA
+        if _CH_UA is None:
+            from .webprofile import _chrome_ua
+            major = _chrome_ua().split("Chrome/")[1].split(".")[0]
+            _CH_UA = _chrome_brands(major)
+        info.setHttpHeader(b"Sec-CH-UA", _CH_UA.encode())
 
         # checked per-request so the config toggle applies live (dict reads
         # are GIL-atomic; worst case one request uses the old value)
