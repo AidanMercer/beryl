@@ -209,9 +209,10 @@ def main():
     key_filter = KeyFilter(keys, app)
     manager.set_key_filter(key_filter)
 
-    # connected BEFORE the vault loads: connection order is delivery order, so
-    # the ctx refresh must land before the vault's own themeChanged handler
-    # regenerates page CSS from the Theme property
+    # NOTE: connection order does NOT order delivery here — QML bound-signal
+    # handlers (the vault's onThemeChanged) run before python slots on the same
+    # emission, so the vault defers its page-CSS pass with Qt.callLater to read
+    # the refreshed Theme property (see ViewHost.qml)
     def retheme():
         ctx.setContextProperty("Theme", theme.theme_dict())
         apply_font()

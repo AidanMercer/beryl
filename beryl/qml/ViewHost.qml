@@ -45,7 +45,11 @@ Window {
     }
 
     // live pages keep the rice's palette: theme switches and page-color
-    // changes rewrite the injected stylesheet in place, no reload needed
+    // changes rewrite the injected stylesheet in place, no reload needed.
+    // Deferred via callLater: QML bound-signal handlers run BEFORE the python
+    // slots on the same signal, so an immediate rethemeAll would read the
+    // Theme/Config context properties from before main.py's refresh and paint
+    // every page one theme behind. After the dispatch both are current.
     function rethemeAll() {
         for (var i = 0; i < rep.count; i++) {
             var it = rep.itemAt(i)
@@ -55,11 +59,11 @@ Window {
     }
     Connections {
         target: Rice
-        function onThemeChanged() { vault.rethemeAll() }
+        function onThemeChanged() { Qt.callLater(vault.rethemeAll) }
     }
     Connections {
         target: Prefs
-        function onApplied() { vault.rethemeAll() }
+        function onApplied() { Qt.callLater(vault.rethemeAll) }
     }
 
     Item {
