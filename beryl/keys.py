@@ -23,6 +23,7 @@ DEFAULT_BINDS = {
         "gw": "detach",
         "b": "bookmarks-open",
         "gd": "downloads",
+        "gp": "passwords",
         "s": "settings",
         "h": "help",
         "f": "hint", "F": "hint-tab",
@@ -119,6 +120,7 @@ class KeyController(QObject):
     modeChanged = Signal()
     pendingChanged = Signal()
     promptAnswer = Signal(str)   # "y" / "n" / "<Esc>" while a prompt bar is up
+    saveAnswer = Signal(str)     # same, for the save-password bar
     listKey = Signal(str)        # every key while a list overlay (bookmarks) is up
 
     def __init__(self, cfg, api, parent=None):
@@ -135,6 +137,7 @@ class KeyController(QObject):
         self._pressed = {}         # key code → did we consume its press?
         self._mode_reason = "manual"
         self._prompt_active = False
+        self._save_active = False
         # passthrough intent is per-tab, not per-host: switching tabs must not
         # forget what you chose. _pt_override[uid] = {"host": h, "on": bool}
         # records a manual on/off; absent = decide automatically by site.
@@ -251,6 +254,12 @@ class KeyController(QObject):
         prompt-bearing window closes or loses focus."""
         self._prompt_active = bool(on)
 
+    @Slot(bool)
+    def setSaveActive(self, on):
+        """A save-password bar is up in the active window (its `hot` state);
+        y/n/Esc answer it from normal mode."""
+        self._save_active = bool(on)
+
     @Slot()
     def cmdlineClosed(self):
         """The cmdline TextField calls this when it closes (esc or accept)."""
@@ -282,7 +291,7 @@ class KeyController(QObject):
             if ks and ks not in ("DEAD",) and self._hints is not None:
                 self._hints.key(ks)
             return True           # hint mode owns every key
-        if self._mode in ("bookmarks", "downloads", "settings"):
+        if self._mode in ("bookmarks", "downloads", "settings", "passwords"):
             ks = keystr(ev)
             if ks == "<Esc>":
                 # handled here, not in the overlay: if the overlay never opened
@@ -314,6 +323,10 @@ class KeyController(QObject):
 
         if self._prompt_active and ks in ("y", "n", "<Esc>"):
             self.promptAnswer.emit(ks)
+            return True
+
+        if self._save_active and ks in ("y", "n", "<Esc>"):
+            self.saveAnswer.emit(ks)
             return True
 
         if self._capture is not None:

@@ -50,6 +50,25 @@ WebEngineView {
             if (view.shown)                // background tabs don't get a vote
                 Vim.pageEditable(on === true)
         }
+        // creds.js claims an origin; never trust it — a login only counts for
+        // the page actually loaded here (the main frame's origin). A cross-
+        // origin iframe can't phish another site's saved password this way.
+        function pageOrigin() {
+            var u = view.url.toString()
+            var m = u.match(/^(https?:\/\/[^\/]+)/)
+            return m ? m[1] : ""
+        }
+        // QWebChannel delivers this return value to creds.js's trailing
+        // callback — the JS-side cb arg never reaches here
+        function credsFor(origin) {
+            var o = pageOrigin()
+            return (o !== "" && origin === o) ? Vault.credsFor(o) : []
+        }
+        function credsSubmitted(origin, username, password) {
+            var o = pageOrigin()
+            if (o !== "" && origin === o && view.shown)
+                Vault.submitted(o, username, password)
+        }
     }
     // transparent mode strips page backgrounds AND repaints their text in the
     // rice's palette — without the repaint, a site's white-background colors
@@ -227,6 +246,16 @@ WebEngineView {
                 worldId: WebEngineScript.ApplicationWorld
             }
         ]
+        // password autofill/capture: main world (needs the webchannel and the
+        // fills must read as real input to the page); only when enabled
+        if (Config.passwords) {
+            scripts.push({
+                name: "creds",
+                sourceUrl: Qt.resolvedUrl("../js/creds.js"),
+                injectionPoint: WebEngineScript.DocumentReady,
+                worldId: WebEngineScript.MainWorld
+            })
+        }
         // injected twice: DocumentCreation kills the unthemed first paint on
         // every navigation after the first (creation-time scripts can lose the
         // registration race on a fresh renderer), DocumentReady is the one

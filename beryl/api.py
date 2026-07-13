@@ -14,6 +14,7 @@ class Api(QObject):
     bookmarksRequested = Signal()             # open the bookmarks list overlay
     downloadsRequested = Signal()             # open the downloads list overlay
     settingsRequested = Signal()              # open the settings overlay
+    passwordsRequested = Signal()             # open the saved-passwords overlay
     navRequested = Signal(str)                # url → current view
     histRequested = Signal(int)               # -1 back / +1 forward
     reloadRequested = Signal(bool)            # bypass cache?

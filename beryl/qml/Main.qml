@@ -90,6 +90,17 @@ ApplicationWindow {
         z: 5
     }
 
+    SavePrompt {
+        id: savePrompt
+        isCurrent: win.isCurrent
+        anchors { top: permPrompt.visible ? permPrompt.bottom : tabstrip.bottom
+                  left: parent.left; right: parent.right }
+        anchors.topMargin: 2
+        anchors.leftMargin: Theme.pad
+        anchors.rightMargin: Theme.pad
+        z: 5
+    }
+
     // ---- page --------------------------------------------------------------------
     // The views live in the ViewHost vault; this window borrows the loader of
     // the tab it's showing by reparenting it here. The loader keeps its own
@@ -198,6 +209,15 @@ ApplicationWindow {
         sourceComponent: SettingsList {}
         onLoaded: item.start()
     }
+
+    Loader {
+        id: passwordsList
+        anchors.fill: parent
+        active: false
+        z: 11
+        sourceComponent: PasswordsList {}
+        onLoaded: item.start()
+    }
     // overlays are mode-driven: they vanish the moment we leave their mode
     Connections {
         target: Vim
@@ -208,6 +228,8 @@ ApplicationWindow {
                 downloadsList.active = false
             if (Vim.mode !== "settings" && settingsList.active)
                 settingsList.active = false
+            if (Vim.mode !== "passwords" && passwordsList.active)
+                passwordsList.active = false
             if (Vim.mode !== "help" && help.active)
                 help.active = false
         }
@@ -244,6 +266,7 @@ ApplicationWindow {
         function onBookmarksRequested() { if (win.isCurrent) bookmarksList.active = true }
         function onDownloadsRequested() { if (win.isCurrent) downloadsList.active = true }
         function onSettingsRequested() { if (win.isCurrent) settingsList.active = true }
+        function onPasswordsRequested() { if (win.isCurrent) passwordsList.active = true }
         function onNavRequested(url) {
             if (!win.isCurrent) return
             var v = win.currentView()

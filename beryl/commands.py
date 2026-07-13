@@ -17,6 +17,7 @@ _ALIASES = {
     "w": "session-save",
     "nohl": "search-stop",
     "dl": "downloads",
+    "pw": "passwords",
     "bm": "bookmark-add",
     "bookmark": "bookmark-add",
     "clear": "clear",
@@ -54,7 +55,7 @@ def to_url(text, cfg):
 
 
 def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
-          hints=None, bookmarks=None, wins=None, downloads=None):
+          hints=None, bookmarks=None, wins=None, downloads=None, vault=None):
     reg = {}
     marks = {}   # per-url scroll marks: {char: (url, x, y)} — session-lived
 
@@ -261,6 +262,14 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
     def settings_(count=1, arg=""):
         keys.set_mode("settings")
         api.settingsRequested.emit()
+
+    @command("passwords")
+    def passwords_(count=1, arg=""):
+        if vault is None or vault.count() == 0:
+            api.toast.emit("no saved passwords yet", False)
+            return
+        keys.set_mode("passwords")
+        api.passwordsRequested.emit()
 
     @command("help")
     def help_(count=1, arg=""):

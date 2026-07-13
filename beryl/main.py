@@ -21,6 +21,7 @@ from .session import Session
 from .settings import Settings
 from .tabs import TabModel
 from .theme import ThemeManager
+from .vault import Vault
 from .windows import WindowManager
 
 _LOG_CAP = 1024 * 1024
@@ -91,6 +92,22 @@ def main():
     app.setApplicationName("beryl")
     app.setDesktopFileName("beryl")   # Wayland app_id Hyprland matches
 
+    # passwords-only re-import: pure NSS + gpg, no Chromium profile involved,
+    # so handle it before anything heavy and exit. Refuses while beryl runs
+    # (its vault writes would race a live instance's).
+    if "--import-zen-passwords" in sys.argv[1:]:
+        from . import importer
+        if ipc.try_forward([]):
+            print("[import] beryl is running — quit it first (ZZ), then re-run",
+                  flush=True)
+            return
+        pdir = importer._find_profile()
+        if pdir is None:
+            print("[import] no zen profile found under ~/.config/zen", flush=True)
+            return
+        importer.import_passwords(pdir)
+        return
+
     importing = "--import-zen" in sys.argv[1:]
 
     # single instance: a Chromium profile can't be shared, so a second launch
@@ -146,6 +163,7 @@ def main():
     keys = KeyController(cfg, api, app)
     history = History(cfg, app)
     bookmarks = Bookmarks(app)
+    vault = Vault(cfg, api, app)
     hints = Hints(cfg, api, tabs, app)
 
     def apply_font():
@@ -164,6 +182,7 @@ def main():
     ctx.setContextProperty("Dl", downloads)
     ctx.setContextProperty("History", history)
     ctx.setContextProperty("Bookmarks", bookmarks)
+    ctx.setContextProperty("Vault", vault)
     prefs = Settings(cfg, api, app)
     prefs.applied.connect(lambda: ctx.setContextProperty("Config", cfg))
     ctx.setContextProperty("Prefs", prefs)
@@ -174,7 +193,7 @@ def main():
     registry = commands.build(api, tabs, keys, cfg,
                               profile=profile, history=history, session=session,
                               hints=hints, bookmarks=bookmarks, wins=manager,
-                              downloads=downloads)
+                              downloads=downloads, vault=vault)
     keys.set_registry(registry)
     keys.set_hints(hints)
     hints.set_keys(keys)

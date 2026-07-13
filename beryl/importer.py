@@ -1,7 +1,11 @@
+import base64
+import ctypes
+import json
 import shutil
 import sqlite3
 import tempfile
 import time
+from ctypes import POINTER, Structure, byref, c_char_p, c_int, c_void_p
 from pathlib import Path
 
 from PySide6.QtCore import (QDateTime, QObject, QTimer, QUrl, Signal, Slot)
@@ -9,6 +13,7 @@ from PySide6.QtNetwork import QNetworkCookie
 
 from . import bookmarks as bookmarks_mod
 from . import config
+from .vault import Vault
 
 # Best-effort import from a Firefox-family profile (Zen). Cookies carry the
 # logins over; history + bookmarks feed the cmdline completion. We never touch
@@ -150,6 +155,98 @@ def import_bookmarks(profile_dir):
     return n
 
 
+class _SECItem(Structure):
+    _fields_ = [("type", c_int), ("data", c_void_p), ("len", c_int)]
+
+
+def import_passwords(profile_dir):
+    """Decrypt Firefox/Zen saved logins (NSS SDR) and fold them into beryl's
+    vault. QtWebEngine has no password manager, so these would otherwise be
+    lost across the switch. Works on a COPY of the key/cert DBs so a running
+    Zen isn't disturbed; only handles the no-primary-password case (encrypted
+    logins with a master password would need an interactive prompt we don't
+    have). Best-effort — any failure just imports zero."""
+    src = profile_dir / "logins.json"
+    if not src.exists():
+        return 0
+    try:
+        logins = json.loads(src.read_text()).get("logins", [])
+    except (OSError, ValueError):
+        return 0
+    if not logins:
+        return 0
+
+    # NSS wants a profile dir it can open; copy just the key material so we
+    # never touch (or lock) the live one
+    tmp = Path(tempfile.mkdtemp(prefix="beryl-nss-"))
+    for name in ("key4.db", "cert9.db", "pkcs11.txt"):
+        s = profile_dir / name
+        if s.exists():
+            shutil.copy(s, tmp / name)
+
+    try:
+        nss = ctypes.CDLL("libnss3.so")
+    except OSError as e:
+        print(f"[import] libnss3 unavailable, skipping passwords: {e}", flush=True)
+        return 0
+    nss.NSS_Init.argtypes = [c_char_p]
+    nss.PK11_GetInternalKeySlot.restype = c_void_p
+    nss.PK11_Authenticate.argtypes = [c_void_p, c_int, c_void_p]
+    nss.PK11SDR_Decrypt.argtypes = [POINTER(_SECItem), POINTER(_SECItem), c_void_p]
+    nss.PK11_FreeSlot.argtypes = [c_void_p]
+
+    if nss.NSS_Init(str(tmp).encode()) != 0:
+        print("[import] NSS_Init failed, skipping passwords", flush=True)
+        return 0
+
+    def decrypt(b64):
+        try:
+            raw = base64.b64decode(b64)
+        except (ValueError, TypeError):
+            return None
+        buf = ctypes.create_string_buffer(raw, len(raw))
+        inp = _SECItem(0, ctypes.cast(buf, c_void_p), len(raw))
+        out = _SECItem(0, None, 0)
+        if nss.PK11SDR_Decrypt(byref(inp), byref(out), None) != 0:
+            return None
+        return ctypes.string_at(out.data, out.len).decode("utf-8", "replace")
+
+    n = 0
+    try:
+        slot = nss.PK11_GetInternalKeySlot()
+        # empty primary password: a set master password returns nonzero and we
+        # bail (no interactive prompt to offer)
+        if nss.PK11_Authenticate(slot, True, None) != 0:
+            print("[import] zen profile has a primary password — passwords "
+                  "not imported", flush=True)
+            nss.PK11_FreeSlot(slot)
+            return 0
+        nss.PK11_FreeSlot(slot)
+
+        vault = Vault()
+        for l in logins:
+            origin = l.get("hostname") or ""     # zen stores scheme://host[:port]
+            if not origin.startswith(("http://", "https://")):
+                continue
+            user = decrypt(l.get("encryptedUsername", ""))
+            pw = decrypt(l.get("encryptedPassword", ""))
+            if pw is None:
+                continue
+            vault.upsert(origin, user or "", pw)
+            n += 1
+        if n:
+            vault.flush()
+    finally:
+        try:
+            nss.NSS_Shutdown()
+        except Exception:
+            pass
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    print(f"[import] {n} passwords", flush=True)
+    return n
+
+
 class Importer(QObject):
     """Driver for `beryl --import-zen`. history/bookmarks import immediately;
     cookies wait for the QML WebEngineView to connect the store (injectCookies
@@ -170,6 +267,9 @@ class Importer(QObject):
         print(f"[import] from {self._dir.name}", flush=True)
         import_history(self._dir)
         import_bookmarks(self._dir)
+        # passwords before any WebEngineView loads: NSS is a process-global, so
+        # decrypt while we're sure Chromium hasn't claimed it
+        import_passwords(self._dir)
         return True
 
     @Slot()

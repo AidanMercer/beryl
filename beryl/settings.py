@@ -53,6 +53,12 @@ class Settings(QObject):
                 "value": self._cfg.get("page_colors", "auto"),
                 "detail": "palette on transparent pages — auto follows the theme",
             },
+            {
+                "key": "passwords",
+                "label": "save passwords",
+                "value": "on" if self._cfg.get("passwords", True) else "off",
+                "detail": "offer to save & autofill logins (gp lists them)",
+            },
         ]
 
     @Slot(str, int)
@@ -82,6 +88,15 @@ class Settings(QObject):
             self._cfg["page_colors"] = ring[(i + direction) % len(ring)]
             self.applied.emit()
             self._persist("page_colors", self._cfg["page_colors"])
+            if self._api is not None:
+                self._api.reloadRequested.emit(False)
+        elif key == "passwords":
+            on = not self._cfg.get("passwords", True)
+            self._cfg["passwords"] = on
+            self.applied.emit()
+            self._persist("passwords", on)
+            # creds.js is registered per-navigation, so autofill/capture starts
+            # or stops on the next load; the toggle takes effect from there
             if self._api is not None:
                 self._api.reloadRequested.emit(False)
         else:
