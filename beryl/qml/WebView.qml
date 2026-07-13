@@ -175,6 +175,18 @@ WebEngineView {
             el.style.setProperty("background-color", "transparent", "important");
         if (gradOnly(cs.backgroundImage))
             el.style.setProperty("background-image", "none", "important");
+        // full-viewport BACKDROP images (url too, not just gradients): a
+        // decorative image covering the whole viewport washes the page out and
+        // buries the repainted text (microsoft's login uses a fixed 100%x100%
+        // petals backdrop). Strip it so the frost shows through — same result
+        // as zen. Small/banner images (heroes, logos, thumbnails) never match
+        // the size gate, so real content survives. getBoundingClientRect only
+        // runs for the rare element that actually has a url() background.
+        if (cs.backgroundImage.indexOf("url(") >= 0) {
+            var r = el.getBoundingClientRect();
+            if (r.width >= innerWidth * 0.9 && r.height >= innerHeight * 0.85)
+                el.style.setProperty("background-image", "none", "important");
+        }
         if (gradOnly(getComputedStyle(el, "::before").backgroundImage))
             el.setAttribute("data-beryl-ng-b", "");
         if (gradOnly(getComputedStyle(el, "::after").backgroundImage))
