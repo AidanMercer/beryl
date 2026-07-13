@@ -21,6 +21,8 @@ _ALIASES = {
     "bm": "bookmark-add",
     "bookmark": "bookmark-add",
     "clear": "clear",
+    "google-login": "google-signin",
+    "gsi": "google-signin",
 }
 
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.\-]*:")
@@ -55,7 +57,8 @@ def to_url(text, cfg):
 
 
 def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
-          hints=None, bookmarks=None, wins=None, downloads=None, vault=None):
+          hints=None, bookmarks=None, wins=None, downloads=None, vault=None,
+          signin=None):
     reg = {}
     marks = {}   # per-url scroll marks: {char: (url, x, y)} — session-lived
 
@@ -338,6 +341,18 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
         if session is not None:
             session.save()
             api.toast.emit("session saved", False)
+
+    @command("google-signin")
+    def google_signin(count=1, arg=""):
+        """Sign beryl into Google without fighting the embedded-browser block:
+        carry the session from a real browser Google trusts. Bare — harvest an
+        existing firefox/zen Google login (instant); `login` — open a real
+        browser for a fresh sign-in, then grab the cookies back. Re-run to
+        refresh a rotated/expired session."""
+        if signin is not None:
+            signin.start(arg)
+        else:
+            api.toast.emit("sign-in helper unavailable", True)
 
     @command("clear")
     def clear(count=1, arg=""):

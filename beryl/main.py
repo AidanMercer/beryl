@@ -19,6 +19,7 @@ from .hints import Hints
 from .keys import KeyController, KeyFilter
 from .session import Session
 from .settings import Settings
+from .signin import GoogleSignIn
 from .tabs import TabModel
 from .theme import ThemeManager
 from .vault import Vault
@@ -165,6 +166,7 @@ def main():
     bookmarks = Bookmarks(app)
     vault = Vault(cfg, api, app)
     hints = Hints(cfg, api, tabs, app)
+    signin = GoogleSignIn(profile, api, tabs, cfg, app)
 
     def apply_font():
         app.setFont(QFont(theme.theme_dict()["font"]))
@@ -193,7 +195,7 @@ def main():
     registry = commands.build(api, tabs, keys, cfg,
                               profile=profile, history=history, session=session,
                               hints=hints, bookmarks=bookmarks, wins=manager,
-                              downloads=downloads, vault=vault)
+                              downloads=downloads, vault=vault, signin=signin)
     keys.set_registry(registry)
     keys.set_hints(hints)
     hints.set_keys(keys)
@@ -262,6 +264,7 @@ def main():
     session.watch(tabs)
     session.arm()
     app.aboutToQuit.connect(session.flush)
+    app.aboutToQuit.connect(signin.stop)   # don't orphan a sign-in browser
 
     # remote-desktop sites (AVD) auto-toggle passthrough; keyed per-tab so a
     # manual choice survives tab switches

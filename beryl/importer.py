@@ -47,46 +47,97 @@ def _copy(src):
     return tmp
 
 
-def import_cookies(cookie_store, profile_dir):
-    """Inject Firefox cookies into the QtWebEngine cookie store. Must run with
-    the Qt event loop alive so the async store can flush."""
-    src = profile_dir / "cookies.sqlite"
+def read_cookie_rows(cookies_sqlite):
+    """Read Firefox moz_cookies from a (possibly WAL-locked) cookies.sqlite off
+    a throwaway copy, so a running browser isn't disturbed. Cleans up after
+    itself and never raises — a bad/locked db just yields []. Shared by the
+    full --import-zen path and the live :google-signin harvest."""
+    src = Path(cookies_sqlite)
     if not src.exists():
-        return 0
-    tmp = _copy(src)
-    n = 0
-    cookie_store.loadAllCookies()   # wake the store or setCookie is a no-op
+        return []
+    tmpdir = Path(tempfile.mkdtemp(prefix="beryl-cookies-"))
     try:
-        db = sqlite3.connect(tmp)
-        rows = db.execute(
-            "SELECT name, value, host, path, expiry, isSecure, isHttpOnly, sameSite"
-            " FROM moz_cookies").fetchall()
-        db.close()
-    except sqlite3.Error as e:
-        print(f"[import] cookies read failed: {e}", flush=True)
-        return 0
+        dst = tmpdir / "cookies.sqlite"
+        shutil.copy(src, dst)
+        for suffix in ("-wal", "-shm"):
+            side = src.with_name(src.name + suffix)
+            if side.exists():
+                shutil.copy(side, dst.with_name(dst.name + suffix))
+        db = sqlite3.connect(dst)
+        try:
+            return db.execute(
+                "SELECT name, value, host, path, expiry, isSecure, isHttpOnly,"
+                " sameSite FROM moz_cookies").fetchall()
+        finally:
+            db.close()
+    except (OSError, sqlite3.Error) as e:
+        print(f"[import] cookie read failed: {e}", flush=True)
+        return []
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
-    for name, value, host, path, expiry, secure, http_only, same_site in rows:
-        c = QNetworkCookie(str(name).encode(), str(value).encode())
-        # firefox stores host-only cookies without a leading dot. Only
-        # dotted hosts get a Domain attribute — stamping it on host-only
-        # cookies broadens their scope, and __Host-* cookies (github's
-        # user_session_same_site among them) are outright REJECTED by
-        # Chromium if Domain is present, which silently broke every
-        # imported github POST (422 "What?"). Host-only cookies take their
-        # host from the origin url instead.
-        if host.startswith("."):
-            c.setDomain(host)
-        c.setPath(path or "/")
-        c.setSecure(bool(secure))
-        c.setHttpOnly(bool(http_only))
-        if expiry and expiry > time.time():
-            c.setExpirationDate(QDateTime.fromSecsSinceEpoch(int(expiry)))
-        # origin url: leading-dot domains are host-suffix cookies
-        h = host.lstrip(".")
-        origin = QUrl(f"{'https' if secure else 'http'}://{h}{path or '/'}")
-        cookie_store.setCookie(c, origin)
+
+def host_matches(host, suffixes):
+    """A cookie host (with or without firefox's leading dot) belongs to one of
+    the domain suffixes — exact or a dotted subdomain, so "google.com" matches
+    accounts.google.com but not evil-google.com."""
+    h = str(host).lstrip(".")
+    return any(h == s or h.endswith("." + s) for s in suffixes)
+
+
+def _queue_cookie(cookie_store, row):
+    name, value, host, path, expiry, secure, http_only, same_site = row
+    c = QNetworkCookie(str(name).encode(), str(value).encode())
+    # firefox stores host-only cookies without a leading dot. Only dotted
+    # hosts get a Domain attribute — stamping it on host-only cookies broadens
+    # their scope, and __Host-* cookies (github's user_session_same_site among
+    # them) are outright REJECTED by Chromium if Domain is present, which
+    # silently broke every imported github POST (422 "What?"). Host-only
+    # cookies take their host from the origin url instead.
+    if host.startswith("."):
+        c.setDomain(host)
+    c.setPath(path or "/")
+    c.setSecure(bool(secure))
+    c.setHttpOnly(bool(http_only))
+    if expiry and expiry > time.time():
+        c.setExpirationDate(QDateTime.fromSecsSinceEpoch(int(expiry)))
+    # origin url: leading-dot domains are host-suffix cookies
+    h = host.lstrip(".")
+    origin = QUrl(f"{'https' if secure else 'http'}://{h}{path or '/'}")
+    cookie_store.setCookie(c, origin)
+
+
+def inject_cookies(cookie_store, rows, host_suffixes=None):
+    """Queue Firefox cookie rows into a live QtWebEngine cookie store. With
+    host_suffixes, only cookies for those domains go in (additive — every other
+    login in the store is untouched, and setCookie overwrites by name+host+path
+    so a re-harvest refreshes a rotated session). Must run with the Qt event
+    loop alive so the async store can flush."""
+    cookie_store.loadAllCookies()   # wake the store or setCookie is a no-op
+    n = 0
+    for row in rows:
+        if host_suffixes and not host_matches(row[2], host_suffixes):
+            continue
+        _queue_cookie(cookie_store, row)
         n += 1
+    return n
+
+
+def has_session(rows, host_suffixes, names):
+    """True if the rows hold a plausible live session cookie — one of `names`
+    with a non-trivial value on one of the host_suffixes. Cheap presence check;
+    can't tell a server-expired session from a live one (only a real load can),
+    so a stale hit just gets re-injected and the user re-runs with `login`."""
+    for name, value, host, *_ in rows:
+        if name in names and value and len(str(value)) > 20 \
+                and host_matches(host, host_suffixes):
+            return True
+    return False
+
+
+def import_cookies(cookie_store, profile_dir):
+    """The full --import-zen cookie carry: every cookie in the profile."""
+    n = inject_cookies(cookie_store, read_cookie_rows(profile_dir / "cookies.sqlite"))
     print(f"[import] queued {n} cookies", flush=True)
     return n
 

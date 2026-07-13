@@ -25,8 +25,9 @@ _DIR = config.CACHE_HOME / "adblock"
 # engines (QtWebEngine) AND to detect exactly the kind of navigator tampering
 # a spoof needs — so faking the identity made detection MORE certain, not less.
 # beryl presents its honest Chrome UA string (webprofile._chrome_ua) and
-# nothing more; for Google-federated logins, sign in via a trusted browser and
-# import the cookies (`beryl --import-zen`). See beryl-browser memory.
+# nothing more. Google sign-in instead comes in from a real browser via
+# `:google-signin` (see signin.py) — it harvests the session cookies rather
+# than trying to pass the attestation. See beryl-browser memory.
 
 _R = QWebEngineUrlRequestInfo.ResourceType
 _RTYPE = {

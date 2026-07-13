@@ -50,6 +50,11 @@ _DEFAULTS = {
         "*.wvd.microsoft.com", "windows.cloud.microsoft",
         "*.cloudpc.microsoft.com",
     ],
+    # :google-signin carries a Google login in from a real browser (Google
+    # blocks in-app sign-in for embedded engines). These domains' cookies are
+    # the ones it harvests/injects — add a regional tld or workspace domain if
+    # yours differ.
+    "google_signin_domains": ["google.com", "youtube.com"],
 }
 
 # written to ~/.config/beryl/config.toml on first run so there's something to edit
@@ -88,6 +93,11 @@ cookie_allow_3p = [
 passthrough_sites = [
   "*.wvd.microsoft.com", "windows.cloud.microsoft", "*.cloudpc.microsoft.com",
 ]
+
+# :google-signin signs beryl into Google by carrying the session in from a real
+# browser (Google blocks in-app sign-in for embedded engines like beryl). These
+# domains' cookies get harvested/injected — add a regional tld if yours differ.
+google_signin_domains = ["google.com", "youtube.com"]
 
 # key overrides merge over the defaults per key; "" unbinds a default.
 # sequences use single chars and <angle> notation: "gg", "<C-d>", "<Esc>".
