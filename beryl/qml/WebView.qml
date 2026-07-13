@@ -155,7 +155,25 @@ WebEngineView {
         return bi && bi.indexOf("gradient(") >= 0 && bi.indexOf("url(") < 0;
     }
     function strip(el) {
-        if (gradOnly(getComputedStyle(el).backgroundImage))
+        var cs = getComputedStyle(el);
+        // a background-color that survived the sheet's "*{...!important}" —
+        // the site pinned it with its OWN !important on a higher-specificity
+        // selector (a class beats the universal), so the frost can't show
+        // through (e.g. ai.azure.com's white hero arc, #f5f5f5). An inline
+        // !important outranks any author rule, so neutralise it directly.
+        // The transparent-check skips the elements the sheet already won (the
+        // overwhelming majority) — only genuine survivors get an inline write,
+        // and it's idempotent (a re-strip sees transparent and stops), so the
+        // style-attr MutationObserver can't loop on it.
+        // form fields are the ONE thing the sheet intentionally keeps a
+        // (capped-alpha) background on, so they read as fields — never strip
+        // those, or search bars melt into the frost again
+        var bc = cs.backgroundColor;
+        if (bc && bc !== "rgba(0, 0, 0, 0)" && bc !== "transparent"
+                && !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)
+                && el.style.getPropertyValue("background-color") !== "transparent")
+            el.style.setProperty("background-color", "transparent", "important");
+        if (gradOnly(cs.backgroundImage))
             el.style.setProperty("background-image", "none", "important");
         if (gradOnly(getComputedStyle(el, "::before").backgroundImage))
             el.setAttribute("data-beryl-ng-b", "");
