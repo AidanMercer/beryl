@@ -39,9 +39,10 @@ _DEFAULTS = {
         "login.microsoftonline.com", "login.live.com",
         "login.windows.net", "login.microsoft.com",
         # google sign-in runs a cross-domain cookie check ("we've detected a
-        # problem with your cookie settings") that needs 3p cookies here. Just
-        # the sign-in subdomain — widen to "google.com" if a flow still loops.
-        "accounts.google.com",
+        # problem with your cookie settings" / CookieMismatch) that spans the
+        # apex — the subdomain alone isn't enough (google's own advice is to
+        # allow www.google.com). endswith covers accounts./www.google.com.
+        "google.com",
     ],
     # sites that get the whole keyboard automatically (remote desktops etc);
     # fnmatch patterns against the host. S-Esc still toggles manually.
@@ -78,7 +79,7 @@ page_colors = "auto"       # transparent-page palette: auto (follow theme) / dar
 cookie_allow_3p = [
   "login.microsoftonline.com", "login.live.com",
   "login.windows.net", "login.microsoft.com",
-  "accounts.google.com",   # google sign-in cookie check (widen to google.com if it loops)
+  "google.com",   # google sign-in cookie check spans the apex (accounts./www.google.com)
 ]
 
 # hosts that automatically get the whole keyboard (remote desktops like avd);
