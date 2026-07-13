@@ -63,7 +63,15 @@ def import_cookies(cookie_store, profile_dir):
 
     for name, value, host, path, expiry, secure, http_only, same_site in rows:
         c = QNetworkCookie(str(name).encode(), str(value).encode())
-        c.setDomain(host)
+        # firefox stores host-only cookies without a leading dot. Only
+        # dotted hosts get a Domain attribute — stamping it on host-only
+        # cookies broadens their scope, and __Host-* cookies (github's
+        # user_session_same_site among them) are outright REJECTED by
+        # Chromium if Domain is present, which silently broke every
+        # imported github POST (422 "What?"). Host-only cookies take their
+        # host from the origin url instead.
+        if host.startswith("."):
+            c.setDomain(host)
         c.setPath(path or "/")
         c.setSecure(bool(secure))
         c.setHttpOnly(bool(http_only))
