@@ -92,6 +92,11 @@ WebEngineView {
             return "rgb(" + Math.round(k.r * 255) + ", " + Math.round(k.g * 255) + ", "
                  + Math.round(k.b * 255) + ")"
         }
+        function cssRgba(c, a) {
+            var k = Qt.color(c)
+            return "rgba(" + Math.round(k.r * 255) + ", " + Math.round(k.g * 255) + ", "
+                 + Math.round(k.b * 255) + ", " + a + ")"
+        }
         // theme colors are clamped for the CHROME's side of the glass
         // (theme.py); pinned page_colors can put the page on the opposite
         // side — re-clamp against the page's own dark/light so a light rice
@@ -135,6 +140,10 @@ WebEngineView {
         }
         var field = auto ? capped(Theme.card, 0.35)
                          : (dark ? "rgba(16,18,26,0.35)" : "rgba(255,255,255,0.40)")
+        // floating UI (popups, menus, tooltips) sits on TOP of other page
+        // content — see-through, it's unreadable. strip() paints detected
+        // surfaces with this card; alpha high so the text underneath loses.
+        var cardC = auto ? Theme.card : (dark ? "#10121a" : "#ffffff")
         // layered halo, not a single drop shadow: a tight edge plus a soft
         // glow gives every glyph its own local scrim, so text survives even
         // where a bright wallpaper region bleeds through the frost
@@ -176,7 +185,10 @@ WebEngineView {
              + "[data-beryl-ng-b]::before{background-image:none !important;}"
              + "[data-beryl-ng-a]::after{background-image:none !important;}"
         return { css: css,
-                 pal: { text: cssRgb(textC), link: cssRgb(linkC), sub: cssRgb(subC) } }
+                 pal: { text: cssRgb(textC), link: cssRgb(linkC), sub: cssRgb(subC),
+                        card: cssRgba(cardC, 0.85),
+                        shadow: dark ? "0 8px 24px rgba(0,0,0,0.45)"
+                                     : "0 8px 24px rgba(0,0,0,0.20)" } }
     }
     function transparentScript() {
         // adoptedStyleSheets, not a <style> tag — strict-CSP sites block
@@ -214,8 +226,54 @@ WebEngineView {
     function gradOnly(bi) {
         return bi && bi.indexOf("gradient(") >= 0 && bi.indexOf("url(") < 0;
     }
+    var ROLES = /^(dialog|alertdialog|menu|listbox|tooltip)$/;
+    function surface(el, cs) {
+        // floating UI: popups, menus, dropdowns, tooltips. Out of flow and
+        // self-declared (role / dialog / popover), or out of flow with an
+        // elevated z-index (portal'd popups from popper/fluent/friends).
+        var out = cs.position === "fixed" || cs.position === "absolute";
+        var tagged = ROLES.test((el.getAttribute && el.getAttribute("role")) || "")
+                  || (el.matches && el.matches("dialog,[popover]"));
+        if (!(tagged ? out : (out && (parseInt(cs.zIndex, 10) || 0) >= 100)))
+            return null;
+        if (cs.pointerEvents === "none" || cs.visibility === "hidden")
+            return null;               // positioning wrappers, hidden shells
+        var r = el.getBoundingClientRect();
+        if (r.width < 40 || r.height < 16)
+            return null;               // badges, beaks, decor
+        if (r.width >= innerWidth * 0.95 && r.height >= innerHeight * 0.95)
+            return null;               // full-viewport wrapper/backdrop
+        return r;
+    }
     function strip(el) {
         var cs = getComputedStyle(el);
+        var pal = window.__berylPal || {};
+        // floating surfaces sit on TOP of other page content — transparent,
+        // they're unreadable (outlook's editor card over the compose text).
+        // They get a frost card INSTEAD of a strip: card + shadow inline
+        // (inline !important outranks the sheet), gated on a dataset marker
+        // (not in the observer's attributeFilter) so re-strips can't loop,
+        // holding the painted value so a theme switch repaints it.
+        var surf = pal.card ? surface(el, cs) : null;
+        if (surf) {
+            if (el.dataset.berylCard !== pal.card) {
+                el.dataset.berylCard = pal.card;
+                el.style.setProperty("background-color", pal.card, "important");
+                el.style.setProperty("box-shadow", pal.shadow, "important");
+                // real frost — blur what's underneath. Never on full-width
+                // bars: a backdrop-filter makes the element the containing
+                // block for fixed descendants, re-anchoring nested dropdowns
+                if (surf.width < innerWidth * 0.9)
+                    el.style.setProperty("backdrop-filter", "blur(16px)", "important");
+            }
+        } else if (el.dataset.berylCard) {
+            // stopped being a surface (class flip): undo the card and fall
+            // through — a survivor background still gets neutralised below
+            delete el.dataset.berylCard;
+            el.style.removeProperty("background-color");
+            el.style.removeProperty("box-shadow");
+            el.style.removeProperty("backdrop-filter");
+        }
         // a background-color that survived the sheet's "*{...!important}" —
         // the site pinned it with its OWN !important on a higher-specificity
         // selector (a class beats the universal), so the frost can't show
@@ -229,7 +287,7 @@ WebEngineView {
         // (capped-alpha) background on, so they read as fields — never strip
         // those, or search bars melt into the frost again
         var bc = cs.backgroundColor;
-        if (bc && bc !== "rgba(0, 0, 0, 0)" && bc !== "transparent"
+        if (!surf && bc && bc !== "rgba(0, 0, 0, 0)" && bc !== "transparent"
                 && !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)
                 && el.style.getPropertyValue("background-color") !== "transparent")
             el.style.setProperty("background-color", "transparent", "important");
@@ -240,7 +298,6 @@ WebEngineView {
         // Idempotent: the repaint makes the computed color match pal, so the
         // attribute observer's re-strip is a no-op. Alpha-0 colors are left
         // alone — sites hide text that way on purpose.
-        var pal = window.__berylPal || {};
         var col = cs.color;
         if (pal.text && col && !/,\\s*0\\)$/.test(col)
                 && col !== pal.text && col !== pal.link && col !== pal.sub) {
@@ -303,7 +360,7 @@ WebEngineView {
             }
         }).observe(document.documentElement, {
             childList: true, subtree: true, attributes: true,
-            attributeFilter: ["class", "style",
+            attributeFilter: ["class", "style", "open",
                               "data-theme", "data-color-mode", "data-bs-theme"]
         });
         // late stylesheets finish after DOMContentLoaded — sweep again once
