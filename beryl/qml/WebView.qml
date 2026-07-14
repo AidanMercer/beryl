@@ -303,6 +303,8 @@ WebEngineView {
             return null;               // badges, beaks, decor
         if (r.width >= win.innerWidth * 0.95 && r.height >= win.innerHeight * 0.95)
             return null;               // full-viewport wrapper/backdrop
+        if (r.height > win.innerHeight * 1.2)
+            return null;               // virtualized scroller body, not a popup
         return r;
     }
     function strip(el) {
