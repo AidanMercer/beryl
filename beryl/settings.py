@@ -34,6 +34,7 @@ class Settings(QObject):
     @Property("QVariantList", notify=changed)
     def items(self):
         i = self._engine_index()
+        scrim = float(self._cfg.get("page_scrim", 0.35))
         return [
             {
                 "key": "search",
@@ -52,6 +53,12 @@ class Settings(QObject):
                 "label": "page colors",
                 "value": self._cfg.get("page_colors", "auto"),
                 "detail": "palette on transparent pages — auto follows the theme",
+            },
+            {
+                "key": "scrim",
+                "label": "page scrim",
+                "value": "off" if scrim <= 0 else f"{round(scrim * 100)}%",
+                "detail": "theme-bg wash behind transparent pages — legibility vs frost",
             },
             {
                 "key": "passwords",
@@ -90,6 +97,15 @@ class Settings(QObject):
             self._persist("page_colors", self._cfg["page_colors"])
             if self._api is not None:
                 self._api.reloadRequested.emit(False)
+        elif key == "scrim":
+            ring = [0.0, 0.2, 0.35, 0.5, 0.7]
+            cur = float(self._cfg.get("page_scrim", 0.35))
+            i = min(range(len(ring)), key=lambda j: abs(ring[j] - cur))
+            self._cfg["page_scrim"] = ring[(i + direction) % len(ring)]
+            self.applied.emit()
+            self._persist("page_scrim", self._cfg["page_scrim"])
+            # chrome-side (the wash lives under the viewport, not in the
+            # page), so it applies live — no reload needed
         elif key == "passwords":
             on = not self._cfg.get("passwords", True)
             self._cfg["passwords"] = on
@@ -120,6 +136,8 @@ class Settings(QObject):
             text = ""
         if isinstance(value, bool):
             val = "true" if value else "false"
+        elif isinstance(value, (int, float)):
+            val = f"{value:g}"
         else:
             val = f'"{value}"'
         # tolerate indentation, preserve an inline comment on the line

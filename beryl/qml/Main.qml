@@ -117,6 +117,17 @@ ApplicationWindow {
             bottomMargin: win.fs ? 0 : 6
         }
 
+        // transparent pages sit on bare window glass, and arbitrary sites
+        // need a deeper scrim than the chrome does — without one, bright
+        // wallpaper regions swallow the repainted text. Behind the view
+        // (z: -1), so opaque pages (transparent_pages off) never show it.
+        Rectangle {
+            anchors.fill: parent
+            z: -1
+            color: Theme.viewBg
+            opacity: Math.max(0, Math.min(1, Config.page_scrim))
+        }
+
         property Item held: null
         function refit() {
             // page fullscreen belongs to the tab that requested it — switching

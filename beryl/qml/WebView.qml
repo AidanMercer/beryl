@@ -75,11 +75,42 @@ WebEngineView {
     // (near-black text, dark links) sit invisible on a dark frost. Only
     // background-color is cleared, so sprites/hero images survive; hint labels
     // live in a closed shadow root the * selector can't reach.
-    function transparentCss() {
+    // returns {css, pal}: the stylesheet plus the palette in computed-style
+    // form ("rgb(r, g, b)") — strip() compares getComputedStyle().color
+    // against pal to spot text the sheet failed to repaint (sites pinning
+    // colors with their own !important on class selectors beat our
+    // element-selector rules; GitHub's Link--muted/Link--primary do exactly
+    // this and sat unreadable in whatever palette the site chose)
+    function transparentTheme() {
         function rgba(c, a) {
             var k = Qt.color(c)
             return "rgba(" + Math.round(k.r * 255) + "," + Math.round(k.g * 255) + ","
                  + Math.round(k.b * 255) + "," + (a !== undefined ? a : k.a).toFixed(2) + ")"
+        }
+        function cssRgb(c) {
+            var k = Qt.color(c)
+            return "rgb(" + Math.round(k.r * 255) + ", " + Math.round(k.g * 255) + ", "
+                 + Math.round(k.b * 255) + ")"
+        }
+        // theme colors are clamped for the CHROME's side of the glass
+        // (theme.py); pinned page_colors can put the page on the opposite
+        // side — re-clamp against the page's own dark/light so a light rice
+        // accent doesn't paint invisible links on a pinned-dark page
+        function relLum(c) {
+            function lin(u) { return u <= 0.03928 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4) }
+            var k = Qt.color(c)
+            return 0.2126 * lin(k.r) + 0.7152 * lin(k.g) + 0.0722 * lin(k.b)
+        }
+        function legible(c, wantDark) {
+            var k = Qt.color(c)
+            var p = wantDark ? 1 : 0
+            for (var i = 0; i < 30; i++) {
+                if (wantDark ? relLum(k) >= 0.5 : relLum(k) <= 0.3)
+                    break
+                k = Qt.rgba(k.r + (p - k.r) * 0.1, k.g + (p - k.g) * 0.1,
+                            k.b + (p - k.b) * 0.1, 1)
+            }
+            return k
         }
         // page_colors: auto rides the rice theme; dark/light pin the palette
         // (links keep the theme accent either way — it's tuned for the frost)
@@ -87,10 +118,11 @@ WebEngineView {
         var dark = mode === "auto" ? Qt.color(Theme.bg).hslLightness < 0.5
                                    : mode === "dark"
         var auto = mode === "auto"
-        var text = auto ? rgba(Theme.text, 1)
-                        : (dark ? "rgba(236,239,244,1.00)" : "rgba(26,27,34,1.00)")
-        var sub = auto ? rgba(Theme.subtext, 1)
-                       : (dark ? "rgba(178,184,200,1.00)" : "rgba(92,94,110,1.00)")
+        var textC = auto ? legible(Theme.text, dark) : (dark ? "#eceff4" : "#1a1b22")
+        var subC  = auto ? legible(Theme.subtext, dark) : (dark ? "#b2b8c8" : "#5c5e6e")
+        var linkC = legible(Theme.accent, dark)
+        var text = rgba(textC, 1)
+        var sub = rgba(subC, 1)
         var border = auto ? rgba(Theme.border)
                           : (dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.15)")
         // text fields get a whisper of frost so they read as fields, capped
@@ -103,14 +135,22 @@ WebEngineView {
         }
         var field = auto ? capped(Theme.card, 0.35)
                          : (dark ? "rgba(16,18,26,0.35)" : "rgba(255,255,255,0.40)")
-        var shadow = dark ? "rgba(0,0,0,0.55)" : "rgba(255,255,255,0.65)"
-        return "html,body{background:transparent !important;}"
+        // layered halo, not a single drop shadow: a tight edge plus a soft
+        // glow gives every glyph its own local scrim, so text survives even
+        // where a bright wallpaper region bleeds through the frost
+        var halo = dark ? "0 0 2px rgba(0,0,0,0.85),0 1px 6px rgba(0,0,0,0.55)"
+                        : "0 0 2px rgba(255,255,255,0.90),0 1px 6px rgba(255,255,255,0.65)"
+        // -webkit-text-fill-color: a transparent fill (gradient-text effects)
+        // outlives the bg-gradient strip and leaves invisible headings —
+        // currentcolor folds it back into the repainted color
+        var css = "html,body{background:transparent !important;}"
              + "*{background-color:transparent !important;"
              + "color:" + text + " !important;"
+             + "-webkit-text-fill-color:currentcolor !important;"
              + "border-color:" + border + " !important;"
-             + "text-shadow:0 1px 3px " + shadow + " !important;"
+             + "text-shadow:" + halo + " !important;"
              + "box-shadow:none !important;}"   // shadows draw ghost boxes on frost
-             + "a,a *{color:" + rgba(Theme.accent, 1) + " !important;}"
+             + "a,a *{color:" + rgba(linkC, 1) + " !important;}"
              + "input,textarea,select{background-color:" + field
              + " !important;text-shadow:none !important;}"
              + "button{text-shadow:none !important;}"
@@ -119,6 +159,8 @@ WebEngineView {
              + ":root{color-scheme:" + (dark ? "dark" : "light") + " !important;}"
              + "[data-beryl-ng-b]::before{background-image:none !important;}"
              + "[data-beryl-ng-a]::after{background-image:none !important;}"
+        return { css: css,
+                 pal: { text: cssRgb(textC), link: cssRgb(linkC), sub: cssRgb(subC) } }
     }
     function transparentScript() {
         // adoptedStyleSheets, not a <style> tag — strict-CSP sites block
@@ -135,11 +177,13 @@ WebEngineView {
         // DocumentReady (creation can lose the registration race on a fresh
         // renderer; ready is the reliable one) — the window guard keeps the
         // second run a no-op.
+        var t = transparentTheme()
         return `
 (function () {
     if (window.__berylTransparent) return;
     window.__berylTransparent = true;
-    var css = ${JSON.stringify(transparentCss())};
+    var css = ${JSON.stringify(t.css)};
+    window.__berylPal = ${JSON.stringify(t.pal)};
     try {
         var s = new CSSStyleSheet();
         s.replaceSync(css);
@@ -173,6 +217,20 @@ WebEngineView {
                 && !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)
                 && el.style.getPropertyValue("background-color") !== "transparent")
             el.style.setProperty("background-color", "transparent", "important");
+        // same story for text COLOR: a class-selector !important beats the
+        // sheet's element selectors, leaving text in the site's palette —
+        // unreadable on frost (github's Link--muted file list). Anything not
+        // wearing our palette gets repainted inline; links to the accent.
+        // Idempotent: the repaint makes the computed color match pal, so the
+        // attribute observer's re-strip is a no-op. Alpha-0 colors are left
+        // alone — sites hide text that way on purpose.
+        var pal = window.__berylPal || {};
+        var col = cs.color;
+        if (pal.text && col && !/,\\s*0\\)$/.test(col)
+                && col !== pal.text && col !== pal.link && col !== pal.sub) {
+            var want = (el.closest && el.closest("a")) ? pal.link : pal.text;
+            el.style.setProperty("color", want, "important");
+        }
         if (gradOnly(cs.backgroundImage))
             el.style.setProperty("background-image", "none", "important");
         // full-viewport BACKDROP images (url too, not just gradients): a
@@ -236,6 +294,9 @@ WebEngineView {
         // everything has painted
         window.addEventListener("load",
             function () { queue(sweeps, document); }, { once: true });
+        // theme switches need a full re-pass: inline colors written for the
+        // OLD palette no longer match the new pal and must be repainted
+        window.__berylResweep = function () { queue(sweeps, document); };
         document.documentElement.dataset.berylTransparent = "1";
     }
     if (document.documentElement)
@@ -245,14 +306,18 @@ WebEngineView {
 })();`
     }
     // theme switches / page-color changes rewrite the injected sheet in place
-    // on live pages (the vault calls this on every view) — no reload needed
+    // on live pages (the vault calls this on every view) — no reload needed.
+    // The palette + resweep keep the inline survivor repaints current too.
     function applyTransparentTheme() {
         if (!Config.transparent_pages)
             return
-        var css = JSON.stringify(transparentCss())
-        runJavaScript("if(window.__berylSheet){window.__berylSheet.replaceSync(" + css + ");}"
+        var t = transparentTheme()
+        var css = JSON.stringify(t.css)
+        runJavaScript("window.__berylPal=" + JSON.stringify(t.pal) + ";"
+                      + "if(window.__berylSheet){window.__berylSheet.replaceSync(" + css + ");}"
                       + "else{var t=document.getElementById('__beryl_style');"
-                      + "if(t)t.textContent=" + css + ";}")
+                      + "if(t)t.textContent=" + css + ";}"
+                      + "if(window.__berylResweep)window.__berylResweep();")
     }
 
     userScripts.collection: {

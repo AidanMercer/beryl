@@ -90,6 +90,42 @@ def _luminance(hex_color):
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
+def _rel_lum(rgb):
+    """WCAG relative luminance of (r, g, b) in 0..1 — gamma-corrected, unlike
+    _luminance, so yellow reads as bright and blue as dark."""
+    def lin(u):
+        return u / 12.92 if u <= 0.03928 else ((u + 0.055) / 1.055) ** 2.4
+    r, g, b = rgb
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def _legible(hex_color, dark):
+    """Themes tune their accents for wallpaper art, not for text on frost:
+    a mid-luminance accent (nature's honey gold, fuel's neon orange) melts
+    into the glass wherever the wallpaper behind it fights it. Walk the
+    colour toward the legible pole — white on dark themes, black on light —
+    until it clears a luminance bar; hue survives, already-legible accents
+    (moon's yellow, vinland's ice) pass through untouched."""
+    h = (hex_color or "").lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    if len(h) == 8:
+        h = h[2:]
+    if len(h) != 6:
+        return hex_color
+    try:
+        rgb = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+    except ValueError:
+        return hex_color
+    pole = 1.0 if dark else 0.0
+    ok = (lambda c: _rel_lum(c) >= 0.5) if dark else (lambda c: _rel_lum(c) <= 0.3)
+    for _ in range(30):
+        if ok(rgb):
+            break
+        rgb = [c + (pole - c) * 0.1 for c in rgb]
+    return "#" + "".join(f"{round(c * 255):02x}" for c in rgb)
+
+
 def _focused_monitor():
     """Name of the focused Hyprland monitor ("" if unknowable). Monitors can
     show different themes; beryl should match the one being looked at."""
@@ -145,26 +181,31 @@ def _read_tokens(theme_dir):
 
 def _build_theme(tokens):
     """Re-derive beryl's palette from the rice tokens. Chrome hairlines follow
-    `fg` rather than white so light themes (shiro) stay legible."""
+    `fg` rather than white so light themes (shiro) stay legible. Accents get
+    a legibility clamp (_legible) — they're used as TEXT here (statusbar url,
+    tab titles, page links), a harsher job than the shell's fills and lines."""
     theme = dict(_BASE)
 
     def col(key):
         v = tokens.get(key)
         return v if isinstance(v, str) and v.startswith("#") and _rgba(v) else None
 
+    dark = _luminance(col("bg") or _TOKEN_FALLBACK["bg"]) < 0.5
+
     accent = col("accent")
     if accent:
+        accent = _legible(accent, dark)
         theme["accent"]     = _rgba(accent)
         theme["sel"]        = _rgba(accent, "4d")
         theme["accentSoft"] = _rgba(accent, "33")
 
     accent2 = col("accent2")
     if accent2:
-        theme["accent2"] = _rgba(accent2)
+        theme["accent2"] = _rgba(_legible(accent2, dark))
 
     warn = col("accent_warn")
     if warn:
-        theme["warn"] = _rgba(warn)
+        theme["warn"] = _rgba(_legible(warn, dark))
 
     fg = col("fg") or col("text")
     if fg:

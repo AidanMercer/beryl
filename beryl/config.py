@@ -32,6 +32,10 @@ _DEFAULTS = {
     # palette forced onto transparent pages: "auto" follows the rice theme,
     # "dark"/"light" pin it
     "page_colors": "auto",
+    # extra wash of the theme background behind transparent pages, on top of
+    # the window glass (0 = bare glass, 1 = opaque) — pages need more scrim
+    # than the chrome to stay readable over bright wallpaper
+    "page_scrim": 0.35,
     # third-party cookies are blocked EXCEPT cookies belonging to these
     # domains — microsoft sso silently refreshes tokens through
     # login.microsoftonline.com iframes and breaks without them
@@ -78,6 +82,7 @@ tab_freeze_minutes = 5     # freeze background tabs after this long hidden
 passwords = true           # offer to save & autofill logins (gp lists them)
 transparent_pages = false  # zen-style: strip page backgrounds, frost shows through
 page_colors = "auto"       # transparent-page palette: auto (follow theme) / dark / light
+page_scrim = 0.35          # theme-bg wash behind transparent pages (0 bare glass .. 1 opaque)
 
 # third-party cookies are blocked except cookies belonging to these domains
 # (microsoft sso needs its login iframes; add your idp here if sso loops)
