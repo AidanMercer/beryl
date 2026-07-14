@@ -212,11 +212,15 @@ WebEngineView {
     window.__berylTransparent = true;
     var css = ${JSON.stringify(t.css)};
     window.__berylPal = ${JSON.stringify(t.pal)};
+    window.__berylCss = css;
+    window.__berylSheets = [];        // every adopted sheet — retheme hits all
+    window.__berylRoots = [document]; // every themed tree — resweep hits all
     try {
         var s = new CSSStyleSheet();
         s.replaceSync(css);
         document.adoptedStyleSheets = document.adoptedStyleSheets.concat(s);
         window.__berylSheet = s;
+        window.__berylSheets.push(s);
     } catch (e) {
         var t = document.createElement("style");
         t.id = "__beryl_style";
@@ -226,8 +230,64 @@ WebEngineView {
     function gradOnly(bi) {
         return bi && bi.indexOf("gradient(") >= 0 && bi.indexOf("url(") < 0;
     }
+    var OBS = { childList: true, subtree: true, attributes: true,
+                attributeFilter: ["class", "style", "open",
+                                  "data-theme", "data-color-mode", "data-bs-theme"] };
+    var observer = null;   // one observer watches the main doc, reached-into
+                           // frames, and shadow roots alike
+    function adoptInto(target, realmWin) {
+        // constructable sheets are realm-bound: adopting a sheet built in
+        // another document's realm throws — build it over there
+        try {
+            var sh = new realmWin.CSSStyleSheet();
+            sh.replaceSync(window.__berylCss);
+            target.adoptedStyleSheets = target.adoptedStyleSheets.concat(sh);
+            window.__berylSheets.push(sh);
+            return true;
+        } catch (e) { return false; }
+    }
+    function themeFrame(fr) {
+        // chromium never injects user scripts into about:blank/srcdoc frames
+        // (azure's portal builds whole blades that way — they sat bone-white
+        // in the frost) — theme any same-origin document from the parent;
+        // cross-origin frames run their own copy of this script instead
+        var doc;
+        try { doc = fr.contentDocument; } catch (e) { return; }
+        if (!doc || !doc.documentElement
+                || doc.documentElement.dataset.berylTransparent) return;
+        doc.documentElement.dataset.berylTransparent = "1";
+        // real-url same-origin frames also get their own injected copy —
+        // no-op it, this document is parent-managed now
+        try { if (fr.contentWindow) fr.contentWindow.__berylTransparent = true; }
+        catch (e) {}
+        if (!adoptInto(doc, doc.defaultView)) {
+            var st = doc.createElement("style");
+            st.textContent = window.__berylCss;
+            (doc.head || doc.documentElement).appendChild(st);
+        }
+        window.__berylRoots.push(doc);
+        if (observer) observer.observe(doc.documentElement, OBS);
+        queue(sweeps, doc.documentElement);
+    }
+    function hookFrame(fr) {
+        themeFrame(fr);
+        if (!fr.__berylHook) {
+            fr.__berylHook = 1;   // the element survives navigations; its doc doesn't
+            fr.addEventListener("load", function () { themeFrame(fr); });
+        }
+    }
+    function adoptShadow(sr) {
+        // document sheets don't cascade into shadow trees — every open root
+        // (fluent/lit web components) needs its own adoption and observation
+        if (sr.__beryl) return;
+        sr.__beryl = 1;
+        adoptInto(sr, window);
+        window.__berylRoots.push(sr);
+        if (observer) observer.observe(sr, OBS);
+        queue(sweeps, sr);
+    }
     var ROLES = /^(dialog|alertdialog|menu|listbox|tooltip)$/;
-    function surface(el, cs) {
+    function surface(el, cs, win) {
         // floating UI: popups, menus, dropdowns, tooltips. Out of flow and
         // self-declared (role / dialog / popover), or out of flow with an
         // elevated z-index (portal'd popups from popper/fluent/friends).
@@ -241,12 +301,15 @@ WebEngineView {
         var r = el.getBoundingClientRect();
         if (r.width < 40 || r.height < 16)
             return null;               // badges, beaks, decor
-        if (r.width >= innerWidth * 0.95 && r.height >= innerHeight * 0.95)
+        if (r.width >= win.innerWidth * 0.95 && r.height >= win.innerHeight * 0.95)
             return null;               // full-viewport wrapper/backdrop
         return r;
     }
     function strip(el) {
-        var cs = getComputedStyle(el);
+        // styles resolve in the element's OWN realm — el may live in a
+        // same-origin child frame themed from out here
+        var win = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+        var cs = win.getComputedStyle(el);
         var pal = window.__berylPal || {};
         // floating surfaces sit on TOP of other page content — transparent,
         // they're unreadable (outlook's editor card over the compose text).
@@ -254,7 +317,7 @@ WebEngineView {
         // (inline !important outranks the sheet), gated on a dataset marker
         // (not in the observer's attributeFilter) so re-strips can't loop,
         // holding the painted value so a theme switch repaints it.
-        var surf = pal.card ? surface(el, cs) : null;
+        var surf = pal.card ? surface(el, cs, win) : null;
         if (surf) {
             if (el.dataset.berylCard !== pal.card) {
                 el.dataset.berylCard = pal.card;
@@ -263,7 +326,7 @@ WebEngineView {
                 // real frost — blur what's underneath. Never on full-width
                 // bars: a backdrop-filter makes the element the containing
                 // block for fixed descendants, re-anchoring nested dropdowns
-                if (surf.width < innerWidth * 0.9)
+                if (surf.width < win.innerWidth * 0.9)
                     el.style.setProperty("backdrop-filter", "blur(16px)", "important");
             }
         } else if (el.dataset.berylCard) {
@@ -315,13 +378,18 @@ WebEngineView {
         // runs for the rare element that actually has a url() background.
         if (cs.backgroundImage.indexOf("url(") >= 0) {
             var r = el.getBoundingClientRect();
-            if (r.width >= innerWidth * 0.9 && r.height >= innerHeight * 0.85)
+            if (r.width >= win.innerWidth * 0.9 && r.height >= win.innerHeight * 0.85)
                 el.style.setProperty("background-image", "none", "important");
         }
-        if (gradOnly(getComputedStyle(el, "::before").backgroundImage))
+        if (gradOnly(win.getComputedStyle(el, "::before").backgroundImage))
             el.setAttribute("data-beryl-ng-b", "");
-        if (gradOnly(getComputedStyle(el, "::after").backgroundImage))
+        if (gradOnly(win.getComputedStyle(el, "::after").backgroundImage))
             el.setAttribute("data-beryl-ng-a", "");
+        // trees the sheet can't reach get themed as they're discovered
+        if (el.tagName === "IFRAME" || el.tagName === "FRAME")
+            hookFrame(el);
+        if (el.shadowRoot)
+            adoptShadow(el.shadowRoot);
     }
     function sweep(root) {
         if (root.nodeType === 1) {
@@ -344,8 +412,9 @@ WebEngineView {
         if (!scheduled) { scheduled = true; setTimeout(flush, 120); }
     }
     function init() {
-        sweep(document);
-        new MutationObserver(function (muts) {
+        // observer first: the initial sweep already discovers frames and
+        // shadow roots, and they attach themselves to it
+        observer = new MutationObserver(function (muts) {
             for (var i = 0; i < muts.length; i++) {
                 var m = muts[i];
                 if (m.type === "attributes") { queue(strips, m.target); continue; }
@@ -358,18 +427,23 @@ WebEngineView {
                             function () { queue(sweeps, document); }, { once: true });
                 }
             }
-        }).observe(document.documentElement, {
-            childList: true, subtree: true, attributes: true,
-            attributeFilter: ["class", "style", "open",
-                              "data-theme", "data-color-mode", "data-bs-theme"]
         });
+        observer.observe(document.documentElement, OBS);
+        sweep(document);
         // late stylesheets finish after DOMContentLoaded — sweep again once
         // everything has painted
         window.addEventListener("load",
             function () { queue(sweeps, document); }, { once: true });
-        // theme switches need a full re-pass: inline colors written for the
-        // OLD palette no longer match the new pal and must be repainted
-        window.__berylResweep = function () { queue(sweeps, document); };
+        // theme switches need a full re-pass over EVERY themed tree: inline
+        // colors written for the OLD palette must be repainted. Trees whose
+        // frame navigated away or whose host left the DOM are dropped.
+        window.__berylResweep = function () {
+            window.__berylRoots = window.__berylRoots.filter(function (r) {
+                return r.nodeType === 9 ? r.defaultView
+                                        : r.host && r.host.isConnected;
+            });
+            window.__berylRoots.forEach(function (r) { queue(sweeps, r); });
+        };
         document.documentElement.dataset.berylTransparent = "1";
     }
     if (document.documentElement)
@@ -378,18 +452,24 @@ WebEngineView {
         document.addEventListener("DOMContentLoaded", init);
 })();`
     }
-    // theme switches / page-color changes rewrite the injected sheet in place
-    // on live pages (the vault calls this on every view) — no reload needed.
-    // The palette + resweep keep the inline survivor repaints current too.
+    // theme switches / page-color changes rewrite the injected sheets in
+    // place on live pages (the vault calls this on every view) — no reload
+    // needed. The palette + resweep keep the inline survivor repaints
+    // current too. Known gap: runJavaScript only reaches the MAIN frame, so
+    // cross-origin iframes (which run their own script copy) keep the old
+    // palette until they next navigate.
     function applyTransparentTheme() {
         if (!Config.transparent_pages)
             return
         var t = transparentTheme()
         var css = JSON.stringify(t.css)
         runJavaScript("window.__berylPal=" + JSON.stringify(t.pal) + ";"
-                      + "if(window.__berylSheet){window.__berylSheet.replaceSync(" + css + ");}"
-                      + "else{var t=document.getElementById('__beryl_style');"
-                      + "if(t)t.textContent=" + css + ";}"
+                      + "window.__berylCss=" + css + ";"
+                      + "if(window.__berylSheets){window.__berylSheets.forEach("
+                      + "function(s){try{s.replaceSync(" + css + ")}catch(e){}});}"
+                      + "else if(window.__berylSheet){window.__berylSheet.replaceSync(" + css + ");}"
+                      + "var t=document.getElementById('__beryl_style');"
+                      + "if(t)t.textContent=" + css + ";"
                       + "if(window.__berylResweep)window.__berylResweep();")
     }
 
