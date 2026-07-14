@@ -1,6 +1,7 @@
 import re
 from urllib.parse import quote, urlsplit, urlunsplit
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QGuiApplication
 
 # One registry backs both the key binds and the ex command line. Bind values
@@ -224,7 +225,27 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
         if url == tabs.currentUrl:
             api.js(f"window.scrollTo({{top:{y},left:{x},behavior:'instant'}})")
         else:
-            api.navRequested.emit(url)   # cross-page jump just navigates for now
+            pending_jump.update({"url": url, "x": x, "y": y, "tries": 0})
+            api.navRequested.emit(url)
+
+    pending_jump = {}   # cross-page jump: scroll restores once the url lands
+
+    def _mark_restore():
+        if not pending_jump:
+            return
+        if tabs.currentUrl != pending_jump.get("url"):
+            # redirects / a nav elsewhere never match — stop quietly
+            pending_jump["tries"] = pending_jump.get("tries", 0) + 1
+            if pending_jump["tries"] > 8:
+                pending_jump.clear()
+            return
+        x, y = pending_jump["x"], pending_jump["y"]
+        pending_jump.clear()
+        js = f"window.scrollTo({{top:{y},left:{x},behavior:'instant'}})"
+        # twice: early for snappy feel, again once the page has its full height
+        QTimer.singleShot(200, lambda: api.js(js))
+        QTimer.singleShot(900, lambda: api.js(js))
+    tabs.currentInfoChanged.connect(_mark_restore)
 
     # ---- bookmarks -----------------------------------------------------------
     @command("bookmark-toggle")

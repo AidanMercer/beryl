@@ -23,7 +23,6 @@ _DEFAULTS = {
     "adblock_update_days": 7,
     "history_days": 180,
     "restore_session": True,
-    "tab_freeze_minutes": 5,
     # offer to save logins and autofill them (encrypted at rest); gp lists them
     "passwords": True,
     # zen-style transparency: strip page backgrounds so the frosted window
@@ -78,7 +77,6 @@ adblock = true
 adblock_update_days = 7    # refresh easylist/easyprivacy this often
 history_days = 180         # visits older than this are purged at startup
 restore_session = true     # reopen last session's tabs (lazily) on launch
-tab_freeze_minutes = 5     # freeze background tabs after this long hidden
 passwords = true           # offer to save & autofill logins (gp lists them)
 transparent_pages = false  # zen-style: strip page backgrounds, frost shows through
 page_colors = "auto"       # transparent-page palette: auto (follow theme) / dark / light
