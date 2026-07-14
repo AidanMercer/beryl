@@ -219,9 +219,13 @@ class KeyController(QObject):
     def tab_context(self, uid, url):
         """Called when the current tab or its url changes. Decides passthrough
         from the tab's manual override if it has one (surviving tab switches),
-        otherwise automatically by site. Only an auto-entered passthrough is
-        auto-exited — a manual choice is never overridden by a title ping."""
+        otherwise automatically by site. Passthrough belongs to the TAB:
+        switching tabs recomputes it from the new tab's state — the old tab's
+        manual choice stays recorded against its uid, never carried along in
+        the global mode. Within one tab, a manual choice is only overridden
+        when the tab navigates to a different host."""
         host = urlsplit(url).hostname or ""
+        switched = uid != self._cur_uid
         self._cur_uid = uid
         self._cur_host = host
 
@@ -240,11 +244,19 @@ class KeyController(QObject):
             want = any(fnmatch(host, pat)
                        for pat in self._cfg.get("passthrough_sites", []))
 
-        if want and self._mode in ("normal", "insert"):
-            self.set_mode("passthrough", reason="site")
-        elif not want and self._mode == "passthrough" \
-                and (self._mode_reason == "site" or dropped):
-            self.set_mode("normal")
+        if want:
+            if self._mode in ("normal", "insert"):
+                self.set_mode("passthrough", reason="site")
+            elif switched and self._mode == "passthrough":
+                # carried over from another tab's manual choice — it's this
+                # tab's own decision now, so refresh the reason or a stale
+                # "manual" blocks auto-exit when THIS tab navigates away
+                self._mode_reason = "site"
+        elif self._mode == "passthrough" \
+                and (switched or dropped or self._mode_reason == "site"):
+            # reason "site", not the default "manual": an automatic exit must
+            # not record an override against the tab we just landed on
+            self.set_mode("normal", reason="site")
 
     @Slot(bool)
     def setPromptActive(self, on):
