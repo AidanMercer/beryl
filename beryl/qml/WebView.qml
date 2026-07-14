@@ -149,8 +149,24 @@ WebEngineView {
              + "-webkit-text-fill-color:currentcolor !important;"
              + "border-color:" + border + " !important;"
              + "text-shadow:" + halo + " !important;"
-             + "box-shadow:none !important;}"   // shadows draw ghost boxes on frost
+             + "box-shadow:none !important;"    // shadows draw ghost boxes on frost
+             // any scrollbar-color/width in page CSS switches the element to
+             // standard scrollbars and our ::-webkit-scrollbar rules go dead —
+             // reset to auto so the pill below wins everywhere
+             + "scrollbar-color:auto !important;scrollbar-width:auto !important;}"
              + "a,a *{color:" + rgba(linkC, 1) + " !important;}"
+             // Chromium's default scrollbar paints an opaque track slab down
+             // the frost: bare the track, slim the gutter, and roll the thumb
+             // into an inset accent pill (transparent border + padding-box
+             // clip keeps it off the window edge)
+             + "::-webkit-scrollbar{width:10px;height:10px;background:transparent !important;}"
+             + "::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent !important;}"
+             + "::-webkit-scrollbar-thumb{background-color:" + rgba(linkC, 0.40)
+             + " !important;border-radius:5px;border:2px solid transparent !important;"
+             + "background-clip:padding-box !important;}"
+             + "::-webkit-scrollbar-thumb:hover,::-webkit-scrollbar-thumb:active{background-color:"
+             + rgba(linkC, 0.70) + " !important;}"
+             + "::-webkit-scrollbar-button{display:none !important;}"
              + "input,textarea,select{background-color:" + field
              + " !important;text-shadow:none !important;}"
              + "button{text-shadow:none !important;}"
