@@ -287,25 +287,89 @@ WebEngineView {
         queue(sweeps, sr);
     }
     var ROLES = /^(dialog|alertdialog|menu|listbox|tooltip)$/;
-    function surface(el, cs, win) {
+    var DIALOG = "dialog,[popover],[role='dialog'],[role='alertdialog'],[aria-modal='true']";
+    function floats(el, cs) {
         // floating UI: popups, menus, dropdowns, tooltips. Out of flow and
         // self-declared (role / dialog / popover), or out of flow with an
         // elevated z-index (portal'd popups from popper/fluent/friends).
-        var out = cs.position === "fixed" || cs.position === "absolute";
-        var tagged = ROLES.test((el.getAttribute && el.getAttribute("role")) || "")
-                  || (el.matches && el.matches("dialog,[popover]"));
-        if (!(tagged ? out : (out && (parseInt(cs.zIndex, 10) || 0) >= 100)))
-            return null;
-        if (cs.pointerEvents === "none" || cs.visibility === "hidden")
-            return null;               // positioning wrappers, hidden shells
-        var r = el.getBoundingClientRect();
-        if (r.width < 40 || r.height < 16)
-            return null;               // badges, beaks, decor
+        if (cs.position !== "fixed" && cs.position !== "absolute") return false;
+        return ROLES.test((el.getAttribute && el.getAttribute("role")) || "")
+            || (el.matches && el.matches("dialog,[popover]"))
+            || (parseInt(cs.zIndex, 10) || 0) >= 100;
+    }
+    function backdrop(el, cs, r, win) {
+        // a viewport-sized floating box is a modal's BACKDROP, not its card —
+        // the card is somewhere inside it. Kept separate from floats(): being
+        // part of a dialog makes an element a shell to look inside, never a
+        // card itself, or every absolutely-placed close button in a modal
+        // would get its own little frost square.
+        if (cs.position !== "fixed" && cs.position !== "absolute") return false;
+        if (r.width < win.innerWidth * 0.9 || r.height < win.innerHeight * 0.9)
+            return false;
+        // headlessui & co. declare the dialog on a plain wrapper and hang
+        // un-elevated fixed overlays (backdrop, scroll box) under it — a fixed
+        // box inside a dialog belongs to that dialog. Ancestors only: an app
+        // root that merely CONTAINS an open modal is not itself one.
+        return floats(el, cs) || (el.closest && el.closest(DIALOG) !== null);
+    }
+    function fits(r, win, minW, minH) {
+        // is this box shaped like a popup card?
+        if (r.width < minW || r.height < minH)
+            return false;              // badges, beaks, decor, closed shells
         if (r.width >= win.innerWidth * 0.95 && r.height >= win.innerHeight * 0.95)
-            return null;               // full-viewport wrapper/backdrop
+            return false;              // full-viewport wrapper/backdrop
         if (r.height > win.innerHeight * 1.2)
-            return null;               // virtualized scroller body, not a popup
-        return r;
+            return false;              // virtualized scroller body, not a popup
+        return true;
+    }
+    function surface(el, cs, win) {
+        if (cs.visibility === "hidden") return null;
+        // rects force layout, and we write styles as we sweep — only measure
+        // the few elements that could actually be a card, never the whole page
+        if (cs.position === "fixed" || cs.position === "absolute") {
+            var r = el.getBoundingClientRect();
+            if (floats(el, cs) && cs.pointerEvents !== "none" && fits(r, win, 40, 16))
+                return r;              // the popup itself — the common case
+            // a backdrop's card is inside it, and (bootstrap, headlessui, any
+            // flex-centred modal) is usually IN FLOW, so it never reaches the
+            // test above and the sheet strips it to nothing. Mark the shell so
+            // the walk below can find the card, and re-sweep the subtree —
+            // opening a modal is typically a class flip up here, and the
+            // attribute observer only re-strips the element it fired on.
+            if (backdrop(el, cs, r, win)) {
+                if (!el.dataset.berylShell) {
+                    el.dataset.berylShell = "1";
+                    queue(sweeps, el);
+                }
+                return null;
+            }
+        }
+        if (el.dataset.berylShell) delete el.dataset.berylShell;
+        // a dialog that declares itself but sits IN FLOW. radix — which mr-ui
+        // and so mapbox's console are built on — centres the panel with grid
+        // on the overlay and leaves it position:relative, so nothing in the
+        // chain is out of flow with an elevated z (radix's overlay defaults to
+        // z-index:auto), and the backdrop test can't see it either because the
+        // role sits BELOW the overlay, not above it. Trust the role instead.
+        // Real dialogs only, never the menu/listbox/tooltip roles: sites hang
+        // those on inline page furniture that must not turn into cards.
+        if (cs.pointerEvents !== "none" && el.matches && el.matches(DIALOG)) {
+            var dr = el.getBoundingClientRect();
+            if (fits(dr, win, 40, 16)) return dr;
+        }
+        // content inside a shell: the card is the OUTERMOST box that still
+        // looks like a card. Anything above it in the shell is a positioner —
+        // full-bleed (headlessui's scroll+centring divs) or pointer-through
+        // (bootstrap's .modal-dialog) — and is descended past; anything under
+        // a card is that card's content and is left alone. The floor is well
+        // above the popup one: the only thing worth carding inside a backdrop
+        // is a dialog or a toast, never a stray control sat on the overlay.
+        var host = el.parentElement
+                && el.parentElement.closest("[data-beryl-card],[data-beryl-shell]");
+        if (!host || host.dataset.berylCard || cs.pointerEvents === "none")
+            return null;
+        var cr = el.getBoundingClientRect();
+        return fits(cr, win, 160, 32) ? cr : null;
     }
     function strip(el) {
         // styles resolve in the element's OWN realm — el may live in a
