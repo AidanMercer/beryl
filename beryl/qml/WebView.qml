@@ -403,11 +403,16 @@ WebEngineView {
     }
     var sweeps = new Set(), strips = new Set(), scheduled = false;
     function flush() {
+        // swap the queues out BEFORE walking them: a strip can discover work
+        // (a shell opening, a shadow root, a frame) and queue a sweep for it,
+        // and clearing afterwards would drop exactly those late additions on
+        // the floor — the modal that opens by a class flip never gets carded.
         scheduled = false;
-        sweeps.forEach(sweep);
-        strips.forEach(function (el) { if (el.isConnected) strip(el); });
-        sweeps.clear();
-        strips.clear();
+        var sw = sweeps, st = strips;
+        sweeps = new Set();
+        strips = new Set();
+        sw.forEach(sweep);
+        st.forEach(function (el) { if (el.isConnected) strip(el); });
     }
     function queue(set, n) {
         set.add(n);
