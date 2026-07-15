@@ -288,14 +288,41 @@ WebEngineView {
     }
     var ROLES = /^(dialog|alertdialog|menu|listbox|tooltip)$/;
     var DIALOG = "dialog,[popover],[role='dialog'],[role='alertdialog'],[aria-modal='true']";
-    function floats(el, cs) {
+    function raised(el, cs, win) {
+        // the z-index that raises a float is often not ON the float: fluent
+        // (the azure portal, outlook) parks it on a fixed portal layer and
+        // leaves the popup at z-index:auto — a peek is
+        // .ms-Callout{absolute;z-index:auto} under .ms-Layer--fixed{z:1000000},
+        // which scored 0 here and stripped see-through. Walk up for the
+        // effective one. Only reached for out-of-flow elements, and portals sit
+        // shallow under their layer, so the getComputedStyle cost stays bounded.
+        if (parseInt(cs.zIndex, 10) >= 100) return true;   // NaN ("auto") fails
+        // The raiser must be a portal LAYER — out of flow and elevated. Page
+        // furniture is elevated too (a sticky header at z-index:200), and
+        // counting it turned every absolute badge under one into a frost card.
+        // Walk THROUGH the unpositioned nodes between: fluent's chain is
+        // callout > container{relative} > content{static} > layer{fixed}.
+        // Self-limiting: an out-of-flow raiser that isn't a layer cards itself
+        // (it already passes the own-z test above), and the guard in surface()
+        // then keeps this element from stacking a second card inside it.
+        var n = el.parentElement, hops = 0;
+        while (n && hops++ < 8) {
+            var ncs = win.getComputedStyle(n);
+            if ((ncs.position === "fixed" || ncs.position === "absolute")
+                    && parseInt(ncs.zIndex, 10) >= 100)
+                return true;
+            n = n.parentElement;
+        }
+        return false;
+    }
+    function floats(el, cs, win) {
         // floating UI: popups, menus, dropdowns, tooltips. Out of flow and
-        // self-declared (role / dialog / popover), or out of flow with an
+        // self-declared (role / dialog / popover), or out of flow under an
         // elevated z-index (portal'd popups from popper/fluent/friends).
         if (cs.position !== "fixed" && cs.position !== "absolute") return false;
         return ROLES.test((el.getAttribute && el.getAttribute("role")) || "")
             || (el.matches && el.matches("dialog,[popover]"))
-            || (parseInt(cs.zIndex, 10) || 0) >= 100;
+            || raised(el, cs, win);
     }
     function backdrop(el, cs, r, win) {
         // a viewport-sized floating box is a modal's BACKDROP, not its card —
@@ -310,7 +337,7 @@ WebEngineView {
         // un-elevated fixed overlays (backdrop, scroll box) under it — a fixed
         // box inside a dialog belongs to that dialog. Ancestors only: an app
         // root that merely CONTAINS an open modal is not itself one.
-        return floats(el, cs) || (el.closest && el.closest(DIALOG) !== null);
+        return floats(el, cs, win) || (el.closest && el.closest(DIALOG) !== null);
     }
     function fits(r, win, minW, minH) {
         // is this box shaped like a popup card?
@@ -328,7 +355,13 @@ WebEngineView {
         // the few elements that could actually be a card, never the whole page
         if (cs.position === "fixed" || cs.position === "absolute") {
             var r = el.getBoundingClientRect();
-            if (floats(el, cs) && cs.pointerEvents !== "none" && fits(r, win, 40, 16))
+            // one card per float: a layer's z-index now reaches every
+            // out-of-flow descendant, so an inner absolute (a callout beak, a
+            // decoration) would stack a second card on its own popup's. The
+            // walk below already guards the in-shell path this way.
+            if (floats(el, cs, win) && cs.pointerEvents !== "none" && fits(r, win, 40, 16)
+                    && !(el.parentElement
+                         && el.parentElement.closest("[data-beryl-card]")))
                 return r;              // the popup itself — the common case
             // a backdrop's card is inside it, and (bootstrap, headlessui, any
             // flex-centred modal) is usually IN FLOW, so it never reaches the
