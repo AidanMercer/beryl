@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
+import QtQuick.Effects
 import QtWebEngine
 
 ApplicationWindow {
@@ -63,14 +64,84 @@ ApplicationWindow {
 
     function askPermission(permission) { permPrompt.ask(permission) }
 
+    // ---- rice theme layer ----
+    // Optional beryl.qml from the active ~/.config/themes/<x>/ — same slot
+    // grammar as frostify/mica/vellum: an invisible Item root that may expose
+    // cardBg/cardBorder/cardBorderWidth/cardRadius, a `wordmark` string for
+    // the status bar, plus backdrop/overlay Components (mounted behind the
+    // chrome / above the page, masked to the window radius, both gone in page
+    // fullscreen). Injected: pal (snapshot palette) and host (this window —
+    // active, fs, navId). See themes/AI-INSTRUCTION.md.
+    // a stable counter for theme flourishes: bumps on every tab switch or
+    // committed navigation — the browser's page turn. currentInfoChanged also
+    // fires for title updates, so gate on the url actually changing.
+    property int navId: 0
+    property string _lastNavUrl: ""
+    Connections {
+        target: Tabs
+        function onCurrentInfoChanged() {
+            if (Tabs.currentUrl !== win._lastNavUrl) {
+                win._lastNavUrl = Tabs.currentUrl
+                win.navId++
+            }
+        }
+    }
+    function riceProp(name, fallback) {
+        var it = riceLoader.item
+        if (!it) return fallback
+        var v = it[name]
+        return v === undefined ? fallback : v
+    }
+    Loader {
+        id: riceLoader
+        visible: false
+        function reload() {
+            source = ""   // drop the old chrome before swapping injections
+            if (!Rice.source) return
+            var props = {}
+            if (Rice.wantsPal) props.pal = Rice.pal
+            if (Rice.wantsHost) props.host = win
+            setSource(Rice.source, props)
+        }
+        onStatusChanged: if (status === Loader.Error)
+            console.warn("theme chrome failed to load:", Rice.source)
+        Component.onCompleted: reload()
+    }
+    Connections {
+        target: Rice
+        function onThemeChanged() { riceLoader.reload() }
+    }
+
     // ---- frosted glass ---------------------------------------------------------
+    // a theme can retint/reshape the frame via cardBg/cardBorder/…
     Rectangle {
         visible: !win.fs
         anchors.fill: parent
-        radius: Theme.radius
-        color: Theme.bg
-        border.color: Theme.border
-        border.width: 1
+        radius: win.riceProp("cardRadius", Theme.radius)
+        color: win.riceProp("cardBg", Theme.bg)
+        border.color: win.riceProp("cardBorder", Theme.border)
+        border.width: win.riceProp("cardBorderWidth", 1)
+    }
+
+    // rounded-rect mask so theme scenery can't poke past the window corners;
+    // only rendered while a backdrop/overlay is actually mounted
+    Rectangle {
+        id: fxMask
+        anchors.fill: parent
+        radius: win.riceProp("cardRadius", Theme.radius)
+        color: "black"
+        opacity: 0
+        layer.enabled: backdropFx.item !== null || overlayFx.item !== null
+    }
+
+    // theme scenery behind the chrome (shaders, particles, gradients)
+    Loader {
+        id: backdropFx
+        anchors.fill: parent
+        visible: !win.fs
+        sourceComponent: win.riceProp("backdrop", null) || null
+        layer.enabled: item !== null
+        layer.effect: MultiEffect { maskEnabled: true; maskSource: fxMask }
     }
 
     TabStrip {
@@ -175,12 +246,25 @@ ApplicationWindow {
         height: 24
         message: win.msg
         messageError: win.msgError
+        wordmark: win.riceProp("wordmark", "")
     }
 
     CmdLine {
         id: cmdline
         anchors.fill: footer
         onClosed: win.refocusView()
+    }
+
+    // theme scenery above the page (flourishes, sheens) — click-through by
+    // contract (theme overlays carry no input handlers), below beryl's own
+    // mode overlays (help, lists — z 10+)
+    Loader {
+        id: overlayFx
+        anchors.fill: parent
+        visible: !win.fs
+        sourceComponent: win.riceProp("overlay", null) || null
+        layer.enabled: item !== null
+        layer.effect: MultiEffect { maskEnabled: true; maskSource: fxMask }
     }
 
     Loader {

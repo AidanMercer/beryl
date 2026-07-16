@@ -7,6 +7,9 @@ Item {
     property string message: ""
     property bool messageError: false
     property string findCount: ""
+    // a theme can speak here via its chrome's `wordmark`; empty falls back
+    // to the theme's name
+    property string wordmark: ""
 
     readonly property color _modeColor: Vim.mode === "insert" ? Theme.accent2
         : Vim.mode === "command" ? Theme.accent2
@@ -107,7 +110,8 @@ Item {
             font.family: Theme.font
         }
         Text {
-            text: Rice.name !== "" ? Rice.name : "—"
+            text: root.wordmark !== "" ? root.wordmark
+                : Rice.name !== "" ? Rice.name : "—"
             color: Theme.accent
             font.pixelSize: 12
             font.family: Theme.font

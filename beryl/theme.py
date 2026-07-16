@@ -6,7 +6,7 @@ import tomllib
 from pathlib import Path
 
 from PySide6.QtCore import (Property, QFileSystemWatcher, QObject, QTimer,
-                            Signal)
+                            QUrl, Signal)
 
 THEMES_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "themes"
 _CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
@@ -233,9 +233,11 @@ def _build_theme(tokens):
 class ThemeManager(QObject):
     """Follows the active rice theme (~/.config/themes/<x>) live. Watches
     ~/.cache/awww (touched on every wallpaper switch) plus the active theme's
-    config.toml, so switching themes or editing one re-skins beryl while it
-    runs. themeChanged fires after each rebuild; main.py re-sets the Theme
-    context property, which re-evaluates every Theme.* binding in the QML."""
+    config.toml and beryl.qml, so switching themes or editing one re-skins
+    beryl while it runs. themeChanged fires after each rebuild; main.py
+    re-sets the Theme context property, which re-evaluates every Theme.*
+    binding in the QML, and Main.qml reloads the chrome slot (the theme's
+    optional beryl.qml — same slot grammar as frostify/mica/vellum)."""
     themeChanged = Signal()
 
     def __init__(self, parent=None):
@@ -243,6 +245,11 @@ class ThemeManager(QObject):
         self._dir = None
         self._theme = dict(_BASE)
         self._tokens = dict(_TOKEN_FALLBACK)
+        self._pal = {}
+        self._source = ""
+        self._wants_pal = False
+        self._wants_host = False
+        self._nonce = 0
         self._snapshot = None
 
         self._watcher = QFileSystemWatcher(self)
@@ -264,6 +271,26 @@ class ThemeManager(QObject):
     def themeDir(self):
         return str(self._dir) if self._dir else ""
 
+    # -- chrome slot (the theme's optional beryl.qml — same slot grammar as
+    # frostify/mica/vellum: pal/host injection, backdrop/overlay Components) --
+    @Property(str, notify=themeChanged)
+    def source(self):
+        """file:// URL of the theme's beryl.qml with a ?v= nonce (hot reload),
+        or "" when the theme ships none."""
+        return self._source
+
+    @Property(bool, notify=themeChanged)
+    def wantsPal(self):
+        return self._wants_pal
+
+    @Property(bool, notify=themeChanged)
+    def wantsHost(self):
+        return self._wants_host
+
+    @Property("QVariantMap", notify=themeChanged)
+    def pal(self):
+        return self._pal
+
     def theme_dict(self):
         return self._theme
 
@@ -276,8 +303,20 @@ class ThemeManager(QObject):
     def _refresh(self, first=False):
         d = _active_theme_dir()
         tokens = _read_tokens(d)
-        snapshot = (str(d) if d else "",
-                    tuple(sorted((k, str(v)) for k, v in tokens.items())))
+
+        qml = (d / "beryl.qml") if d else None
+        qml_stat = None
+        qml_text = ""
+        if qml is not None and qml.is_file():
+            try:
+                st = qml.stat()
+                qml_stat = (st.st_mtime_ns, st.st_size)
+                qml_text = qml.read_text()
+            except OSError:
+                qml_stat = None
+
+        snapshot = (str(d) if d else "", tuple(sorted(
+            (k, str(v)) for k, v in tokens.items())), qml_stat)
         self._rewatch(d)
         if snapshot == self._snapshot:
             return
@@ -286,7 +325,32 @@ class ThemeManager(QObject):
         self._dir = d
         self._tokens = tokens
         self._theme = _build_theme(tokens)
-        print(f"[theme] {self._dir.name if self._dir else '(defaults)'}", flush=True)
+        self._pal = {
+            "neon":     tokens.get("accent", _TOKEN_FALLBACK["accent"]),
+            "cyan":     tokens.get("accent2", _TOKEN_FALLBACK["accent2"]),
+            "magenta":  tokens.get("accent3", _TOKEN_FALLBACK["accent3"]),
+            "amber":    tokens.get("accent_warn", _TOKEN_FALLBACK["accent_warn"]),
+            "dim":      tokens.get("accent_dim", _TOKEN_FALLBACK["accent_dim"]),
+            "text":     tokens.get("fg") or tokens.get("text") or _TOKEN_FALLBACK["fg"],
+            "glass":    tokens.get("glass") or tokens.get("bg") or _TOKEN_FALLBACK["bg"],
+            "fontMono": tokens.get("font_mono", _TOKEN_FALLBACK["font_mono"]),
+            "uiScale":  1.0,
+            "themeDir": str(d) if d else "",
+        }
+
+        if qml_stat is not None:
+            # same handshake as frostify / mica / the shell's loaders: grep the
+            # file for the literal property declarations to decide what to inject
+            self._wants_pal = "property var pal" in qml_text
+            self._wants_host = "property var host" in qml_text
+            self._nonce += 1
+            self._source = QUrl.fromLocalFile(str(qml)).toString() + f"?v={self._nonce}"
+        else:
+            self._wants_pal = self._wants_host = False
+            self._source = ""
+
+        print(f"[theme] {self._dir.name if self._dir else '(defaults)'}"
+              f"  chrome={'beryl.qml' if self._source else 'none'}", flush=True)
         if not first:
             self.themeChanged.emit()
 
@@ -307,7 +371,7 @@ class ThemeManager(QObject):
         want += [_LAST_WALLPAPER]
         want += [THEMES_DIR / "default" / "config.toml"]
         if d is not None:
-            want += [d, d / "config.toml"]
+            want += [d, d / "config.toml", d / "beryl.qml"]
         have = set(self._watcher.directories()) | set(self._watcher.files())
         missing = [str(p) for p in want if p.exists() and str(p) not in have]
         if missing:
