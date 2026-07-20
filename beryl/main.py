@@ -262,6 +262,13 @@ def main():
         manager.open_window()
     if not manager.handles:
         sys.exit(1)
+    # a failed vault load disables saving entirely, so say so out loud —
+    # deferred because the first window's toast bar doesn't exist yet
+    if vault.load_failed:
+        QTimer.singleShot(1500, lambda: api.toast.emit(
+            "vault locked — saved passwords couldn't be decrypted; "
+            ":vault-unlock to retry", True))
+
     session.watch(tabs)
     session.arm()
     app.aboutToQuit.connect(session.flush)

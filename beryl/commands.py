@@ -289,11 +289,24 @@ def build(api, tabs, keys, cfg, profile=None, history=None, session=None,
 
     @command("passwords")
     def passwords_(count=1, arg=""):
+        if vault is not None and vault.load_failed:
+            api.toast.emit("vault locked — passwords couldn't be decrypted; "
+                           ":vault-unlock to retry", True)
+            return
         if vault is None or vault.count() == 0:
             api.toast.emit("no saved passwords yet", False)
             return
         keys.set_mode("passwords")
         api.passwordsRequested.emit()
+
+    @command("vault-unlock")
+    def vault_unlock(count=1, arg=""):
+        if vault is None:
+            return
+        if not vault.load_failed:
+            api.toast.emit("vault is already unlocked", False)
+            return
+        vault.unlock()
 
     @command("help")
     def help_(count=1, arg=""):

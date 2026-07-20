@@ -285,8 +285,10 @@ def import_passwords(profile_dir):
                 continue
             vault.upsert(origin, user or "", pw)
             n += 1
-        if n:
-            vault.flush()
+        if n and not vault.flush():
+            print("[import] existing vault unreadable — nothing imported",
+                  flush=True)
+            n = 0
     finally:
         try:
             nss.NSS_Shutdown()

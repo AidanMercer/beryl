@@ -58,29 +58,52 @@ class Vault(QObject):
         self._never = []      # origins the user said never to save for
         self._pending = {}    # pid → candidate login awaiting y/n
         self._pid = 0
+        self._load_failed = False   # a store exists but we couldn't read it
         self._load()
 
     # ---- disk ------------------------------------------------------------------
     def _load(self):
-        if not _STORE.exists() or not _KEY.exists():
-            return
+        """Fill the store from disk. A failure here latches _load_failed so
+        flush() can't write our empty list over ciphertext we never read — a
+        gpg hiccup must not cost the user every saved password."""
+        self._logins = []
+        self._never = []
+        self._load_failed = False
+        if not _STORE.exists():
+            return True       # nothing saved yet; empty really is the state
+        if not _KEY.exists():
+            self._load_failed = True
+            print("[vault] store present but key missing — refusing to write",
+                  flush=True)
+            return False
         r = _gpg(["--decrypt", str(_STORE)])
         if r.returncode != 0:
+            self._load_failed = True
             print(f"[vault] decrypt failed: {r.stderr.decode(errors='replace').strip()}",
                   flush=True)
-            return
+            return False
         try:
             data = json.loads(r.stdout)
         except ValueError:
-            print("[vault] store unreadable — starting empty", flush=True)
-            return
+            self._load_failed = True
+            print("[vault] store unreadable — refusing to write", flush=True)
+            return False
         self._logins = [l for l in data.get("logins", [])
                         if isinstance(l, dict) and l.get("origin")]
         self._never = [n for n in data.get("never", []) if isinstance(n, str)]
+        return True
+
+    @property
+    def load_failed(self):
+        return self._load_failed
 
     def flush(self):
+        if self._load_failed:
+            self._toast("vault locked — the saved passwords couldn't be read, "
+                        "so nothing was written. :vault-unlock to retry", True)
+            return False
         if not _ensure_key():
-            return
+            return False
         blob = json.dumps({"logins": self._logins, "never": self._never})
         tmp = _STORE.with_suffix(".gpg.tmp")
         r = _gpg(["--symmetric", "--cipher-algo", "AES256", "-o", str(tmp), "-"],
@@ -88,11 +111,28 @@ class Vault(QObject):
         if r.returncode != 0:
             print(f"[vault] encrypt failed: {r.stderr.decode(errors='replace').strip()}",
                   flush=True)
-            return
+            self._toast("couldn't encrypt the vault — password not saved", True)
+            return False
         try:
-            tmp.replace(_STORE)
+            tmp.replace(_STORE)   # atomic: same fs, os.replace under the hood
         except OSError as e:
             print(f"[vault] store write failed: {e}", flush=True)
+            self._toast("couldn't write the vault — password not saved", True)
+            return False
+        return True
+
+    @Slot(result=bool)
+    def unlock(self):
+        """Retry the load — for after the user fixes gpg or restores the key."""
+        ok = self._load()
+        self.changed.emit()
+        if ok:
+            self._toast(f"vault unlocked — {len(self._logins)} saved login"
+                        f"{'' if len(self._logins) == 1 else 's'}")
+        else:
+            self._toast("vault still unreadable — check ~/.local/share/beryl "
+                        "(vault.key, gpg-agent); saving stays disabled", True)
+        return ok
 
     # ---- helpers ---------------------------------------------------------------
     def _enabled(self):
@@ -159,7 +199,8 @@ class Vault(QObject):
             return
         if verdict == "save":
             self.upsert(p["origin"], p["username"], p["password"])
-            self.flush()
+            if not self.flush():
+                return    # flush toasted the reason; don't claim a save
             self.changed.emit()
             self._toast(f"password saved for {self._host(p['origin'])}")
         elif verdict == "never":
@@ -196,6 +237,7 @@ class Vault(QObject):
         self._logins = [l for l in self._logins
                         if not (l["origin"] == origin and l["username"] == username)]
         if len(self._logins) != before:
-            self.flush()
+            if not self.flush():
+                return
             self.changed.emit()
             self._toast("login removed")
