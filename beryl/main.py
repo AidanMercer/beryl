@@ -17,6 +17,7 @@ from .downloads import Downloads
 from .history import History
 from .hints import Hints
 from .keys import KeyController, KeyFilter
+from .picker import FilePicker
 from .session import Session
 from .settings import Settings
 from .signin import GoogleSignIn
@@ -185,6 +186,10 @@ def main():
     ctx.setContextProperty("History", history)
     ctx.setContextProperty("Bookmarks", bookmarks)
     ctx.setContextProperty("Vault", vault)
+    picker = FilePicker(parent=app)
+    picker.toast.connect(api.toast)
+    ctx.setContextProperty("Picker", picker)
+
     prefs = Settings(cfg, api, app)
     prefs.applied.connect(lambda: ctx.setContextProperty("Config", cfg))
     ctx.setContextProperty("Prefs", prefs)

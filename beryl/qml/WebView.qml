@@ -675,4 +675,45 @@ WebEngineView {
         else
             permission.deny()   // background tabs don't get to nag
     }
+
+    // ---- uploads: mica, not Chromium's fallback dialog -----------------------
+    // Left unclaimed, QtWebEngine draws its own bare QtQuick FileDialog (Qt's
+    // native path can't save us — qt6ct exposes no file-dialog helper, so the
+    // xdg-portal → mica chain is never asked). Claim it and run mica directly.
+    // The request object is JS-owned: parking it in a property is what keeps it
+    // alive while mica is up, and dropping the property lets it go.
+    property var pendingPick: null      // { id, request }
+    onFileDialogRequested: function (request) {
+        if (!view.shown) {              // background tabs don't get to pop a picker
+            request.dialogReject()
+            return
+        }
+        var mode = "file"
+        if (request.mode === FileDialogRequest.FileModeOpenMultiple)
+            mode = "files"
+        else if (request.mode === FileDialogRequest.FileModeUploadFolder)
+            mode = "dir"
+        else if (request.mode === FileDialogRequest.FileModeSave)
+            mode = "save"
+        var id = Picker.pick(mode, request.defaultFileName)
+        if (id < 0) {                   // no picker to open — don't leave the page hanging
+            request.dialogReject()
+            return
+        }
+        request.accepted = true         // ours now; Chromium keeps its dialog shut
+        view.pendingPick = { id: id, request: request }
+    }
+    Connections {
+        target: Picker
+        function onPicked(id, files) {
+            var p = view.pendingPick
+            if (!p || p.id !== id)
+                return                  // another view's picker
+            view.pendingPick = null
+            if (files.length > 0)
+                p.request.dialogAccept(files)
+            else
+                p.request.dialogReject()   // cancelled
+        }
+    }
 }
